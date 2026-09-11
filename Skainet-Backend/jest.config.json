@@ -1,0 +1,33 @@
+{
+  "moduleFileExtensions": [
+    "js",
+    "json",
+    "ts"
+  ],
+  "rootDir": "..",
+  "roots": [
+    "<rootDir>/backend/src",
+    "<rootDir>/backend/pruebas",
+    "<rootDir>/backend/test",
+    "<rootDir>/test/unitarias",
+    "<rootDir>/test/integracion"
+  ],
+  "testRegex": ".*\\.spec\\.ts$",
+  "transform": {
+    "^.+\\.(t|j)s$": ["<rootDir>/backend/node_modules/ts-jest", {
+      "tsconfig": "<rootDir>/backend/tsconfig.json"
+    }]
+  },
+  "modulePaths": [
+    "<rootDir>/backend/node_modules"
+  ],
+  "moduleDirectories": [
+    "node_modules",
+    "<rootDir>/backend/node_modules"
+  ],
+  "collectCoverageFrom": [
+    "backend/src/**/*.(t|j)s"
+  ],
+  "coverageDirectory": "./backend/coverage",
+  "testEnvironment": "node"
+}

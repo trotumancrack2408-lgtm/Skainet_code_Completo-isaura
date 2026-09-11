@@ -1,0 +1,32 @@
+{
+  "moduleFileExtensions": [
+    "js",
+    "json",
+    "ts"
+  ],
+  "rootDir": "..",
+  "roots": [
+    "<rootDir>/Skainet-API/src",
+    "<rootDir>/Skainet-API/pruebas",
+    "<rootDir>/test/unitarias",
+    "<rootDir>/test/integracion"
+  ],
+  "testRegex": ".*\\.spec\\.ts$",
+  "transform": {
+    "^.+\\.(t|j)s$": ["<rootDir>/Skainet-API/node_modules/ts-jest", {
+      "tsconfig": "<rootDir>/Skainet-API/tsconfig.json"
+    }]
+  },
+  "modulePaths": [
+    "<rootDir>/Skainet-API/node_modules"
+  ],
+  "moduleDirectories": [
+    "node_modules",
+    "<rootDir>/Skainet-API/node_modules"
+  ],
+  "collectCoverageFrom": [
+    "Skainet-API/src/**/*.(t|j)s"
+  ],
+  "coverageDirectory": "./Skainet-API/coverage",
+  "testEnvironment": "node"
+}

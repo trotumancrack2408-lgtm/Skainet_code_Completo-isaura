@@ -1,0 +1,153 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id                 String    @id
+  documentType       String?
+  name               String
+  role               String
+  status             String    @default("Fuera de Turno")
+  accountStatus      String    @default("Activo")
+  password           String
+  email              String?
+  phone              String?
+  mustChangePassword Boolean   @default(true)
+  failedAttempts     Int       @default(0)
+  lockoutUntil       DateTime?
+  lastLogin          DateTime?
+  history            String    @default("[]")
+  securityQuestions  String    @default("[]")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  actorId   String
+  actorRole String?
+  action    String
+  module    String
+  details   String
+  createdAt DateTime @default(now())
+}
+
+model Material {
+  id        String           @id @default(uuid())
+  name      String
+  category  String
+  unit      String
+  stock     Float            @default(0)
+  minStock  Float            @default(0)
+  status    String           @default("Activo")
+  createdAt DateTime         @default(now())
+  movements KardexMovement[]
+}
+
+model KardexMovement {
+  id             String   @id @default(uuid())
+  materialId     String
+  material       Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  type           String
+  quantity       Float
+  originProvider String?
+  workOrderId    String?
+  observations   String?
+  responsibleId  String
+  createdAt      DateTime @default(now())
+}
+
+model PhaseTimeLog {
+  id              String   @id @default(uuid())
+  workOrderId     String
+  jewelerId       String
+  phase           String
+  action          String
+  durationSeconds Int      @default(0)
+  createdAt       DateTime @default(now())
+}
+
+model TripleWeightLog {
+  id             String   @id @default(uuid())
+  workOrderId    String
+  jewelerId      String
+  phase          String
+  weight1        Float
+  weight2        Float
+  weight3        Float
+  lossPercentage Float
+  createdAt      DateTime @default(now())
+}
+
+model Batch {
+  id          String   @id @default(uuid())
+  entryWeight Float
+  exitWeight  Float
+  ringsCount  Int
+  createdAt   DateTime @default(now())
+  rings       Ring[]
+}
+
+model Ring {
+  id        String   @id
+  name      String
+  status    String   @default("PENDIENTE")
+  securePin String   @default("0000")
+  createdAt DateTime @default(now())
+  batchId   String
+  batch     Batch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+}
+
+model WorkOrder {
+  id              String    @id @default(uuid())
+  ringId          String
+  ringName        String
+  receiverId      String
+  executorId      String
+  totalWeight     Float
+  status          String    @default("OPEN")
+  startTime       DateTime  @default(now())
+  endTime         DateTime?
+  durationMinutes Int?
+  loss            Float?
+  isAnomaly       Boolean   @default(false)
+  explanation     String?
+  weights         String
+  providedPin     String
+}
+
+model ClientOrder {
+  id              String   @id @default(uuid())
+  shortId         String   @unique
+  clientName      String
+  email           String?
+  phone           String?
+  design          String
+  estimatedWeight Float
+  status          String   @default("En Espera")
+  stepIndex       Int      @default(0)
+  createdAt       DateTime @default(now())
+}
+
+model Alert {
+  id          String   @id @default(uuid())
+  type        String
+  message     String
+  severity    String   @default("WARNING")
+  timestamp   DateTime @default(now())
+  orderId     String?
+  jewelerName String
+}
+
+model Machine {
+  id                   String    @id
+  name                 String
+  type                 String    @default("LASER")
+  status               String    @default("OPERATIONAL")
+  cycleCount           Int       @default(0)
+  maintenanceThreshold Int       @default(500)
+  lastMaintenance      DateTime?
+}

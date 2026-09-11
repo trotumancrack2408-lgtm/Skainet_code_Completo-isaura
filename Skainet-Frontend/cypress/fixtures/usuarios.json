@@ -1,0 +1,6 @@
+{
+  "admin": { "name": "David", "password": "12345" },
+  "admin2": { "name": "Viralsquad", "password": "admin" },
+  "joyero": { "name": "Deysi", "password": "1234" },
+  "lider": { "name": "Plata", "password": "12345" }
+}
