@@ -1,0 +1,8 @@
+file 'plano0.mp4'
+file 'plano1.mp4'
+file 'plano2.mp4'
+file 'plano3.mp4'
+file 'plano4.mp4'
+file 'plano5.mp4'
+file 'plano6.mp4'
+file 'plano7.mp4'
