@@ -191,13 +191,13 @@ describe('PRUEBAS DE INTEGRACIÓN - Gestión de Joyeros (RF-001)', () => {
       prismaMock.user.findUnique.mockResolvedValue(null);
       prismaMock.user.create.mockResolvedValue({
         id: '30022',
-        name: 'Joyero Auditado 2',
+        name: 'Joyero Auditado Dos',
         role: UserRole.JOYERO,
       });
 
       await service.createUser('4', UserRole.ADMIN, {
         id: '30022',
-        name: 'Joyero Auditado 2',
+        name: 'Joyero Auditado Dos',
         role: UserRole.JOYERO,
       });
 

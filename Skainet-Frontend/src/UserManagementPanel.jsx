@@ -13,17 +13,19 @@ export default function UserManagementPanel({ allUsers = [], fetchUsers, API_URL
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [position, setPosition] = useState('');
 
   // Filter states
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL'); // ALL, Activo, Inactivo
+  const [superAdminSection, setSuperAdminSection] = useState('Administrador');
 
   const isSuperAdmin = currentUser?.role === 'Super Administrador' || currentUser?.role === 'Dueno';
-  const targetRole = isSuperAdmin ? 'Administrador' : 'Joyero';
+  const targetRole = isSuperAdmin ? superAdminSection : 'Joyero';
 
   // Filter users according to role hierarchy (RF-001)
   const managedUsers = allUsers.filter(u => {
-    const roleMatches = isSuperAdmin ? u.role === 'Administrador' : u.role === 'Joyero';
+    const roleMatches = u.role === targetRole;
     const statusMatches = statusFilter === 'ALL' || u.accountStatus === statusFilter;
     const queryMatches = !searchQuery || 
       u.name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -39,7 +41,8 @@ export default function UserManagementPanel({ allUsers = [], fetchUsers, API_URL
     setName('');
     setEmail('');
     setPhone('');
-    setPassword(Math.random().toString(36).slice(-8)); // Generar clave temporal sugerida
+    setPassword(`Skainet#${Math.floor(1000 + Math.random() * 9000)}`);
+    setPosition(targetRole === 'Joyero' ? 'Joyero General' : '');
     setIsFormOpen(true);
   };
 
@@ -51,6 +54,7 @@ export default function UserManagementPanel({ allUsers = [], fetchUsers, API_URL
     setEmail(user.email || '');
     setPhone(user.phone || '');
     setPassword('');
+    setPosition(user.position || '');
     setIsFormOpen(true);
   };
 
@@ -58,6 +62,36 @@ export default function UserManagementPanel({ allUsers = [], fetchUsers, API_URL
     e.preventDefault();
     if (!userId || !name) {
       alert("El número de identificación y el nombre completo son obligatorios.");
+      return;
+    }
+    const cleanDocument = userId.trim();
+    if (documentType === 'CC') {
+      const repeated = /^(\d)\1+$/.test(cleanDocument);
+      const sequential = '0123456789'.includes(cleanDocument) || '9876543210'.includes(cleanDocument);
+      if (!/^\d{6,10}$/.test(cleanDocument) || repeated || sequential) {
+        alert('La cédula debe tener entre 6 y 10 dígitos, sin caracteres repetidos ni secuencias.');
+        return;
+      }
+    } else if (!/^[A-Za-z0-9]{6,12}$/.test(cleanDocument)) {
+      alert('El número de CE o pasaporte debe tener entre 6 y 12 caracteres alfanuméricos, sin espacios.');
+      return;
+    }
+    const compactName = name.trim().replace(/[ -]/g, '');
+    if (name.trim().length < 3 || !/^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+(?:[ -][A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+)*$/.test(name.trim()) || /^(.)\1+$/i.test(compactName)) {
+      alert('Ingrese un nombre válido de al menos 3 letras; no se permiten caracteres repetidos ni números.');
+      return;
+    }
+    const normalizedPhone = phone.replace(/[\s-]/g, '');
+    if (phone && (!/^(\+57)?3\d{9}$/.test(normalizedPhone) || /^(\+57)?(\d)\2{9}$/.test(normalizedPhone))) {
+      alert('El teléfono debe ser un celular colombiano válido de 10 dígitos y no puede repetir un solo número.');
+      return;
+    }
+    if (!editingUser && !/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,64}$/.test(password)) {
+      alert('La contraseña temporal debe tener mínimo 8 caracteres e incluir mayúscula, minúscula, número y símbolo.');
+      return;
+    }
+    if (targetRole === 'Joyero' && !position) {
+      alert('Seleccione el cargo operativo del joyero.');
       return;
     }
 
@@ -68,6 +102,7 @@ export default function UserManagementPanel({ allUsers = [], fetchUsers, API_URL
       email,
       phone,
       role: targetRole,
+      position: targetRole === 'Joyero' ? position : null,
       password: editingUser ? undefined : (password || undefined),
     };
 
@@ -117,12 +152,17 @@ export default function UserManagementPanel({ allUsers = [], fetchUsers, API_URL
       return;
     }
 
+    const passwordConfirmation = window.prompt('Confirma tu contraseña para desactivar esta cuenta:');
+    if (!passwordConfirmation) return;
+
     try {
       const resp = await fetch(`${API_URL}/users/${userToDeactivate.id}`, {
         method: 'DELETE',
         headers: {
+          'Content-Type': 'application/json',
           ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-        }
+        },
+        body: JSON.stringify({ password: passwordConfirmation })
       });
 
       if (resp.ok) {
@@ -135,6 +175,35 @@ export default function UserManagementPanel({ allUsers = [], fetchUsers, API_URL
     } catch (err) {
       console.error(err);
       alert("Error de conexión");
+    }
+  };
+
+  const handleActivate = async (userToActivate) => {
+    if (!window.confirm(`¿Deseas reactivar la cuenta de "${userToActivate.name}"? Podrá volver a iniciar sesión.`)) return;
+
+    const passwordConfirmation = window.prompt('Confirma tu contraseña para reactivar esta cuenta:');
+    if (!passwordConfirmation) return;
+
+    try {
+      const resp = await fetch(`${API_URL}/users/${userToActivate.id}/activate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ password: passwordConfirmation })
+      });
+
+      if (resp.ok) {
+        alert('Usuario reactivado exitosamente.');
+        fetchUsers();
+      } else {
+        const errorData = await resp.json();
+        alert(`Error: ${errorData.message || 'No se pudo reactivar el usuario'}`);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Error de conexión');
     }
   };
 
@@ -176,8 +245,17 @@ export default function UserManagementPanel({ allUsers = [], fetchUsers, API_URL
             Gestión de {targetRole}es
           </h2>
           <p style={{ color: '#9ca3af', fontSize: '0.9rem', marginTop: '4px' }}>
-            {isSuperAdmin ? 'Administración jerárquica de cuentas de Administrador (RF-001.1 - RF-001.4)' : 'Gestión operativa de Joyeros del taller (RF-001.5 - RF-001.8)'}
+            {isSuperAdmin ? `Gestión de cuentas de ${targetRole === 'Administrador' ? 'Administración Central' : 'Joyeros del taller'}.` : 'Gestión operativa de Joyeros del taller (RF-001.5 - RF-001.8)'}
           </p>
+          {isSuperAdmin && (
+            <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+              {['Administrador', 'Joyero'].map(role => (
+                <button key={role} type="button" onClick={() => { setSuperAdminSection(role); setSearchQuery(''); setStatusFilter('ALL'); }} style={{ padding: '7px 12px', borderRadius: '6px', border: '1px solid', borderColor: superAdminSection === role ? '#3b82f6' : '#374151', background: superAdminSection === role ? '#1d4ed8' : '#1f2937', color: '#fff', cursor: 'pointer', fontWeight: 600 }}>
+                  {role === 'Administrador' ? 'Administradores' : 'Joyeros'}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         <button
@@ -294,8 +372,14 @@ export default function UserManagementPanel({ allUsers = [], fetchUsers, API_URL
                     required
                     disabled={!!editingUser}
                     value={userId}
-                    onChange={(e) => setUserId(e.target.value)}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setUserId(documentType === 'CC' ? value.replace(/\D/g, '').slice(0, 10) : value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 12));
+                    }}
                     placeholder="Ej. 1020304050"
+                    inputMode={documentType === 'CC' ? 'numeric' : 'text'}
+                    minLength="6"
+                    maxLength={documentType === 'CC' ? '10' : '12'}
                     style={{
                       width: '100%',
                       padding: '10px',
@@ -310,6 +394,26 @@ export default function UserManagementPanel({ allUsers = [], fetchUsers, API_URL
               </div>
 
               <div>
+                <label style={{ fontSize: '0.85rem', color: '#9ca3af', display: 'block', marginBottom: '4px' }}>Rol asignado</label>
+                <input value={targetRole} readOnly style={{ width: '100%', padding: '10px', backgroundColor: '#374151', border: '1px solid #374151', borderRadius: '6px', color: '#d1d5db' }} />
+              </div>
+
+              {targetRole === 'Joyero' && (
+                <div>
+                  <label style={{ fontSize: '0.85rem', color: '#9ca3af', display: 'block', marginBottom: '4px' }}>Cargo operativo *</label>
+                  <select required value={position} onChange={(e) => setPosition(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#111827', border: '1px solid #374151', borderRadius: '6px', color: '#fff' }}>
+                    <option value="">Seleccione un cargo</option>
+                    <option value="Joyero Líder">Joyero Líder</option>
+                    <option value="Joyero de Diseño">Joyero de Diseño</option>
+                    <option value="Joyero de Fundición">Joyero de Fundición</option>
+                    <option value="Joyero de Engaste">Joyero de Engaste</option>
+                    <option value="Joyero de Pulido y Acabados">Joyero de Pulido y Acabados</option>
+                    <option value="Joyero General">Joyero General</option>
+                  </select>
+                </div>
+              )}
+
+              <div>
                 <label style={{ fontSize: '0.85rem', color: '#9ca3af', display: 'block', marginBottom: '4px' }}>Nombre Completo *</label>
                 <input
                   type="text"
@@ -317,6 +421,8 @@ export default function UserManagementPanel({ allUsers = [], fetchUsers, API_URL
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="Ej. Ramiro Pérez"
+                  minLength="5"
+                  maxLength="80"
                   style={{ width: '100%', padding: '10px', backgroundColor: '#111827', border: '1px solid #374151', borderRadius: '6px', color: '#fff' }}
                 />
               </div>
@@ -337,8 +443,9 @@ export default function UserManagementPanel({ allUsers = [], fetchUsers, API_URL
                 <input
                   type="text"
                   value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="+573000000000"
+                  onChange={(e) => setPhone(e.target.value.replace(/[^\d+\s-]/g, ''))}
+                  placeholder="3001234567"
+                  maxLength="13"
                   style={{ width: '100%', padding: '10px', backgroundColor: '#111827', border: '1px solid #374151', borderRadius: '6px', color: '#fff' }}
                 />
               </div>
@@ -352,10 +459,13 @@ export default function UserManagementPanel({ allUsers = [], fetchUsers, API_URL
                     type="text"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
+                    minLength="8"
+                    maxLength="64"
+                    title="Mínimo 8 caracteres: mayúscula, minúscula, número y símbolo."
                     style={{ width: '100%', padding: '10px', backgroundColor: '#111827', border: '1px solid #374151', borderRadius: '6px', color: '#60a5fa', fontWeight: 'bold' }}
                   />
                   <p style={{ fontSize: '0.75rem', color: '#9ca3af', marginTop: '4px' }}>
-                    * Se exigirá cambio obligatorio de contraseña en el primer inicio de sesión (RN-013).
+                    * Mínimo 8 caracteres, con mayúscula, minúscula, número y símbolo. Se exigirá cambio obligatorio en el primer inicio.
                   </p>
                 </div>
               )}
@@ -449,6 +559,15 @@ export default function UserManagementPanel({ allUsers = [], fetchUsers, API_URL
                           style={{ padding: '6px 10px', backgroundColor: '#7f1d1d', color: '#fca5a5', border: 'none', borderRadius: '6px', cursor: 'pointer' }}
                         >
                           <Lock size={16} />
+                        </button>
+                      )}
+                      {u.accountStatus === 'Inactivo' && (
+                        <button
+                          title="Reactivar cuenta"
+                          onClick={() => handleActivate(u)}
+                          style={{ padding: '6px 10px', backgroundColor: '#14532d', color: '#86efac', border: 'none', borderRadius: '6px', cursor: 'pointer' }}
+                        >
+                          <CheckCircle size={16} />
                         </button>
                       )}
                     </div>

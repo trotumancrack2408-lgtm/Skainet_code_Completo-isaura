@@ -325,4 +325,33 @@ describe('PRUEBAS UNITARIAS - Gestión Administrativa (RF-001)', () => {
       expect(prismaMock.user.update).not.toHaveBeenCalled();
     });
   });
+
+  describe('Reactivación controlada de cuenta', () => {
+    it('Debe restaurar a Activo una cuenta inactiva cuando lo solicita el Super Administrador', async () => {
+      prismaMock.user.findUnique.mockResolvedValue({
+        id: '2001',
+        name: 'Admin Reactivable',
+        role: UserRole.ADMIN,
+        accountStatus: AccountStatus.INACTIVE,
+        history: '[]',
+        securityQuestions: '[]',
+      });
+      prismaMock.user.update.mockResolvedValue({
+        id: '2001',
+        name: 'Admin Reactivable',
+        role: UserRole.ADMIN,
+        accountStatus: AccountStatus.ACTIVE,
+        history: '[]',
+        securityQuestions: '[]',
+      });
+
+      const result = await service.activateUser('1000000000', UserRole.SUPER_ADMIN, '2001');
+
+      expect(result.accountStatus).toBe(AccountStatus.ACTIVE);
+      expect(prismaMock.user.update).toHaveBeenCalledWith(expect.objectContaining({
+        where: { id: '2001' },
+        data: { accountStatus: AccountStatus.ACTIVE },
+      }));
+    });
+  });
 });

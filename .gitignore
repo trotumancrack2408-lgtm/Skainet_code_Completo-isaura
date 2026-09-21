@@ -1,0 +1,26 @@
+# Dependencies and generated builds
+**/node_modules/
+**/dist/
+**/coverage/
+**/*.tsbuildinfo
+
+# Secrets and local configuration
+**/.env
+**/.env.*
+!**/.env.example
+
+# Local databases, runtime state and logs
+**/*.db
+**/pgdata/
+**/*.log
+
+# Generated evidence and temporary working files
+/tmp/
+/output/
+/outputs/
+/.spreadsheet_iso25010/
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.vscode/

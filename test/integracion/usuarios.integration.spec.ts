@@ -98,7 +98,7 @@ describe('PRUEBAS DE INTEGRACIÓN - Gestión Administrativa (RF-001)', () => {
       prismaMock.user.findUnique.mockResolvedValue(null);
       prismaMock.user.create.mockResolvedValue({
         id: '2001',
-        name: 'Admin Nivel 2',
+        name: 'Admin Nivel Dos',
         role: UserRole.ADMIN,
         accountStatus: AccountStatus.ACTIVE,
         status: UserStatus.OFFLINE,
@@ -106,14 +106,14 @@ describe('PRUEBAS DE INTEGRACIÓN - Gestión Administrativa (RF-001)', () => {
 
       const resSuperAdmin = await service.createUser('1000000000', UserRole.SUPER_ADMIN, {
         id: '2001',
-        name: 'Admin Nivel 2',
+        name: 'Admin Nivel Dos',
         role: UserRole.ADMIN,
       });
       expect(resSuperAdmin.id).toBe('2001');
 
       prismaMock.user.create.mockResolvedValue({
         id: '3001',
-        name: 'Joyero Nivel 3',
+        name: 'Joyero Nivel Tres',
         role: UserRole.JOYERO,
         accountStatus: AccountStatus.ACTIVE,
         status: UserStatus.OFFLINE,
@@ -121,7 +121,7 @@ describe('PRUEBAS DE INTEGRACIÓN - Gestión Administrativa (RF-001)', () => {
 
       const resAdmin = await service.createUser('2001', UserRole.ADMIN, {
         id: '3001',
-        name: 'Joyero Nivel 3',
+        name: 'Joyero Nivel Tres',
         role: UserRole.JOYERO,
       });
       expect(resAdmin.id).toBe('3001');
@@ -483,16 +483,16 @@ describe('PRUEBAS DE INTEGRACIÓN - Gestión Administrativa (RF-001)', () => {
       });
 
       const update1 = await service.updateUser('1000000000', UserRole.SUPER_ADMIN, '2001', {
-        name: 'Admin V2',
-        email: 'v2@skainet.com',
+        name: 'Admin Version Dos',
+        email: 'dos@skainet.com',
       });
-      expect(update1.name).toBe('Admin V2');
+      expect(update1.name).toBe('Admin Version Dos');
 
       const update2 = await service.updateUser('1000000000', UserRole.SUPER_ADMIN, '2001', {
-        name: 'Admin V3',
-        email: 'v3@skainet.com',
+        name: 'Admin Version Tres',
+        email: 'tres@skainet.com',
       });
-      expect(update2.name).toBe('Admin V3');
+      expect(update2.name).toBe('Admin Version Tres');
     });
   });
 

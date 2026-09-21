@@ -56,14 +56,15 @@ describe('UsersService - Pruebas Unitarias', () => {
     expect(Array.isArray(result[0].securityQuestions)).toBe(true);
   });
 
-  it('2. findOne: Debe buscar un usuario por ID y deserializar sus campos JSON', async () => {
+  it('2. findOne: Debe buscar un usuario sin exponer las respuestas de seguridad', async () => {
     prismaMock.user.findUnique.mockResolvedValue(rawUser);
 
     const user = await service.findOne('1');
 
     expect(prismaMock.user.findUnique).toHaveBeenCalledWith({ where: { id: '1' } });
     expect(user.id).toBe('1');
-    expect(user.securityQuestions[0].answer).toBe('Toby');
+    expect(user.securityQuestions[0].question).toBe('Mascota');
+    expect(user.securityQuestions[0].answer).toBeUndefined();
   });
 
   it('3. validatePassword: Debe retornar el usuario si la clave coincide', async () => {

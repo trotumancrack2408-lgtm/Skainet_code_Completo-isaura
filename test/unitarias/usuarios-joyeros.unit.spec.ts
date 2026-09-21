@@ -181,13 +181,13 @@ describe('PRUEBAS UNITARIAS - Gestión de Joyeros (RF-001)', () => {
 
       const payloadWithNewId = {
         id: 'ID_MUTADO_3001',
-        name: 'Joyero R1 Editado',
+        name: 'Joyero Primero Editado',
       };
 
       const result = await service.updateUser('4', UserRole.ADMIN, '3001', payloadWithNewId);
 
       expect(result.id).toBe('3001');
-      expect(result.name).toBe('Joyero R1 Editado');
+      expect(result.name).toBe('Joyero Primero Editado');
     });
   });
 

@@ -6,28 +6,29 @@
   ],
   "rootDir": "..",
   "roots": [
-    "<rootDir>/backend/src",
-    "<rootDir>/backend/pruebas",
-    "<rootDir>/backend/test",
+    "<rootDir>/Skainet-Backend/src",
+    "<rootDir>/Skainet-Backend/pruebas",
     "<rootDir>/test/unitarias",
     "<rootDir>/test/integracion"
   ],
   "testRegex": ".*\\.spec\\.ts$",
   "transform": {
-    "^.+\\.(t|j)s$": ["<rootDir>/backend/node_modules/ts-jest", {
-      "tsconfig": "<rootDir>/backend/tsconfig.json"
+    "^.+\\.(t|j)s$": ["<rootDir>/Skainet-Backend/node_modules/ts-jest", {
+      "tsconfig": "<rootDir>/Skainet-Backend/tsconfig.json"
     }]
   },
   "modulePaths": [
-    "<rootDir>/backend/node_modules"
+    "<rootDir>/Skainet-API/node_modules",
+    "<rootDir>/Skainet-Backend/node_modules"
   ],
   "moduleDirectories": [
-    "node_modules",
-    "<rootDir>/backend/node_modules"
+    "<rootDir>/Skainet-API/node_modules",
+    "<rootDir>/Skainet-Backend/node_modules",
+    "node_modules"
   ],
   "collectCoverageFrom": [
-    "backend/src/**/*.(t|j)s"
+    "Skainet-Backend/src/**/*.(t|j)s"
   ],
-  "coverageDirectory": "./backend/coverage",
+  "coverageDirectory": "./Skainet-Backend/coverage",
   "testEnvironment": "node"
 }

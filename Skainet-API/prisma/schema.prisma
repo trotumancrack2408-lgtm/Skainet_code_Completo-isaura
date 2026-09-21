@@ -12,6 +12,7 @@ model User {
   documentType       String?
   name               String
   role               String
+  position           String?
   status             String    @default("Fuera de Turno")
   accountStatus      String    @default("Activo")
   password           String
@@ -86,25 +87,37 @@ model Batch {
   id          String   @id @default(uuid())
   entryWeight Float
   exitWeight  Float
-  ringsCount  Int
+  itemsCount  Int
   createdAt   DateTime @default(now())
-  rings       Ring[]
+  items       ProductionItem[]
 }
 
-model Ring {
+model ProductType {
+  id          String           @id @default(uuid())
+  name        String           @unique
+  category    String
+  description String?
+  status      String           @default("Activo")
+  createdAt   DateTime         @default(now())
+  items       ProductionItem[]
+}
+
+model ProductionItem {
   id        String   @id
   name      String
-  status    String   @default("PENDIENTE")
+  status    String   @default("PENDING")
   securePin String   @default("0000")
   createdAt DateTime @default(now())
   batchId   String
   batch     Batch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  productTypeId String
+  productType   ProductType @relation(fields: [productTypeId], references: [id])
 }
 
 model WorkOrder {
   id              String    @id @default(uuid())
-  ringId          String
-  ringName        String
+  productionItemId String
+  productionItemName String
   receiverId      String
   executorId      String
   totalWeight     Float

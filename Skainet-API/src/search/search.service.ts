@@ -55,11 +55,15 @@ export class SearchService {
       const orderWhere: any = {
         OR: [
           { id: { contains: queryStr } },
-          { ringName: { contains: queryStr } },
+          { productionItemName: { contains: queryStr } },
         ],
       };
 
-      if (actorRole === 'Joyero') {
+      const actor = actorRole === 'Joyero' && this.prisma.user.findUnique
+        ? await this.prisma.user.findUnique({ where: { id: actorId }, select: { position: true } })
+        : null;
+      const isJewelerLeader = actor?.position === 'Joyero Líder';
+      if (actorRole === 'Joyero' && !isJewelerLeader) {
         orderWhere.executorId = actorId;
       }
 

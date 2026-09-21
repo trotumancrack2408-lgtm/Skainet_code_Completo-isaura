@@ -12,8 +12,8 @@ export interface OrderWeights {
 
 export interface Order {
   id: string;
-  ringId: string;
-  ringName: string;
+  productionItemId: string;
+  productionItemName: string;
   receiverId: string;
   executorId: string;
   weights: OrderWeights;
@@ -53,8 +53,8 @@ export class OrdersService implements OnModuleInit {
         data: [
           {
             id: 'ORD-101',
-            ringId: 'B-101-R1',
-            ringName: 'Anillo 1 (Lote B-101)',
+            productionItemId: 'B-101-P1',
+            productionItemName: 'Anillo 1 (Lote B-101)',
             receiverId: '4',
             executorId: '1',
             weights: JSON.stringify({ anillo: 10.20, plastilina: 1.50, bolsa: 0.80 }),
@@ -69,8 +69,8 @@ export class OrdersService implements OnModuleInit {
           },
           {
             id: 'ORD-102',
-            ringId: 'B-101-R2',
-            ringName: 'Anillo 2 (Lote B-101)',
+            productionItemId: 'B-101-P2',
+            productionItemName: 'Anillo 2 (Lote B-101)',
             receiverId: '4',
             executorId: '2',
             weights: JSON.stringify({ anillo: 6.10, plastilina: 1.20, bolsa: 0.90 }),
@@ -85,8 +85,8 @@ export class OrdersService implements OnModuleInit {
           },
           {
             id: 'ORD-103',
-            ringId: 'B-101-R3',
-            ringName: 'Anillo 3 (Lote B-101)',
+            productionItemId: 'B-101-P3',
+            productionItemName: 'Anillo 3 (Lote B-101)',
             receiverId: '4',
             executorId: '3',
             weights: JSON.stringify({ anillo: 12.50, plastilina: 1.80, bolsa: 0.70 }),
@@ -107,13 +107,17 @@ export class OrdersService implements OnModuleInit {
   }
 
   async create(data: {
-    ringId: string;
+    productionItemId?: string;
+    /** Compatibilidad transitoria con clientes anteriores. */
+    ringId?: string;
     receiverId: string;
     executorId: string;
     weights: OrderWeights;
     providedPin?: string;
   }) {
-    const { ringId, receiverId, executorId, weights } = data;
+    const { receiverId, executorId, weights } = data;
+    const productionItemId = data.productionItemId || data.ringId;
+    if (!productionItemId) throw new BadRequestException('Debe seleccionar una pieza de producción');
 
     const receiver = await this.usersService.findOne(receiverId);
     const executor = await this.usersService.findOne(executorId);
@@ -129,23 +133,27 @@ export class OrdersService implements OnModuleInit {
       throw new BadRequestException('LÍMITE DE TRABAJO EXCEDIDO: El joyero seleccionado ya tiene una pieza en mesa. Debe terminar antes de recibir una nueva.');
     }
 
-    const ring = await this.batchesService.getRingById(ringId);
-    if (!ring) {
-      throw new BadRequestException('El anillo no está disponible o no existe');
+    const batches = this.batchesService as any;
+    const item = batches.getItemById
+      ? await batches.getItemById(productionItemId)
+      : await batches.getRingById(productionItemId);
+    if (!item) {
+      throw new BadRequestException('La pieza no está disponible o no existe');
     }
 
-    if (ring.securePin !== data.providedPin && data.providedPin !== 'master') {
+    if (item.securePin !== data.providedPin && data.providedPin !== 'master') {
       throw new BadRequestException('Clave secreta incorrecta para tomar pieza');
     }
 
     const totalWeight = Number(weights.anillo) + Number(weights.plastilina) + Number(weights.bolsa);
 
     const orderId = `ORD-${Date.now()}`;
-    const newOrder = await this.prisma.workOrder.create({
-      data: {
+    const legacyContract = !batches.getItemById;
+    const orderData: any = {
         id: orderId,
-        ringId,
-        ringName: ring.name,
+        ...(legacyContract
+          ? { ringId: productionItemId, ringName: item.name }
+          : { productionItemId, productionItemName: item.name }),
         receiverId,
         executorId,
         weights: JSON.stringify({
@@ -156,11 +164,12 @@ export class OrdersService implements OnModuleInit {
         totalWeight,
         status: 'OPEN',
         providedPin: data.providedPin || ''
-      }
-    });
+    };
+    const newOrder = await this.prisma.workOrder.create({ data: orderData });
 
     await this.usersService.updateStatus(executorId, UserStatus.WORKING);
-    await this.batchesService.updateRingStatus(ringId, 'ASSIGNED');
+    if (batches.updateItemStatus) await batches.updateItemStatus(productionItemId, 'ASSIGNED');
+    else await batches.updateRingStatus(productionItemId, 'ASSIGNED');
 
     return parseOrder(newOrder);
   }
@@ -184,9 +193,13 @@ export class OrdersService implements OnModuleInit {
     if (!order) throw new NotFoundException('Orden no encontrada');
     if (order.status === 'CLOSED') throw new BadRequestException('La orden ya está cerrada');
 
-    const ring = await this.batchesService.getRingById(order.ringId);
-    if (!ring) throw new BadRequestException('Pieza no encontrada en lotes');
-    if (ring.securePin !== providedPin && providedPin !== 'master') {
+    const batches = this.batchesService as any;
+    const productionItemId = order.productionItemId || (order as any).ringId;
+    const item = batches.getItemById
+      ? await batches.getItemById(productionItemId)
+      : await batches.getRingById(productionItemId);
+    if (!item) throw new BadRequestException('Pieza no encontrada en lotes');
+    if (item.securePin !== providedPin && providedPin !== 'master') {
       throw new BadRequestException('Clave secreta incorrecta para retornar pieza');
     }
 
@@ -206,7 +219,8 @@ export class OrdersService implements OnModuleInit {
 
     // Update Ring: Generate new secure pin
     const newSecurePin = Math.floor(1000 + Math.random() * 9000).toString();
-    await this.batchesService.updateRingStatus(order.ringId, 'PENDING', newSecurePin);
+    if (batches.updateItemStatus) await batches.updateItemStatus(productionItemId, 'PENDING', newSecurePin);
+    else await batches.updateRingStatus(productionItemId, 'PENDING', newSecurePin);
 
     // Update order
     const updatedOrder = await this.prisma.workOrder.update({
@@ -229,7 +243,7 @@ export class OrdersService implements OnModuleInit {
         type: 'WEIGHT',
         severity: 'CRITICAL',
         jewelerName: executor?.name || 'Desconocido',
-        message: `PÉRDIDA CRÍTICA: Se detectó merma de ${loss}g (${((loss/order.totalWeight)*100).toFixed(1)}%) en la pieza ${order.ringName}.`,
+        message: `PÉRDIDA CRÍTICA: Se detectó merma de ${loss}g (${((loss/order.totalWeight)*100).toFixed(1)}%) en la pieza ${order.productionItemName || (order as any).ringName}.`,
         orderId: order.id
       });
     }
@@ -252,7 +266,7 @@ export class OrdersService implements OnModuleInit {
           type: 'TIME',
           severity: 'WARNING',
           jewelerName: jeweler?.name || 'Desconocido',
-          message: `TIEMPO EXCEDIDO: El joyero lleva ${Math.floor(diff)} min con la pieza ${o.ringName}.`,
+          message: `TIEMPO EXCEDIDO: El joyero lleva ${Math.floor(diff)} min con la pieza ${o.productionItemName || (o as any).ringName}.`,
           orderId: o.id
         });
       }

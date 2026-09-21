@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { UsersService } from '../users/users.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { verifyPassword } from '../common/security/password-hash';
 
 @Injectable()
 export class AuthService {
@@ -23,6 +24,12 @@ export class AuthService {
     if (usersSvc?.validatePassword) {
       const validatedUser = await usersSvc.validatePassword(id, pass);
       if (!validatedUser) {
+        if (usersSvc?.incrementFailedAttempts) {
+          await usersSvc.incrementFailedAttempts(id);
+        }
+        if (this.auditService?.log) {
+          await this.auditService.log(id, 'LOGIN_FALLIDO', 'Autenticación', { reason: 'Contraseña incorrecta' });
+        }
         throw new UnauthorizedException('Número de identificación o contraseña incorrectos');
       }
       if (validatedUser.accountStatus === 'Inactivo' || validatedUser.accountStatus === 'INACTIVE') {
@@ -59,7 +66,7 @@ export class AuthService {
     }
 
     // Validar contraseña
-    if (user.password !== pass) {
+    if (!user.password || !verifyPassword(pass, user.password)) {
       if (usersSvc?.incrementFailedAttempts) {
         await usersSvc.incrementFailedAttempts(id);
       }

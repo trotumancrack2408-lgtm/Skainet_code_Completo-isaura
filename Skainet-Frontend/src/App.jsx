@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './App.css';
 import { UserCircle, Power, Clock, CheckCircle, PauseCircle, Lock, Bell, TrendingUp, TrendingDown, FileSpreadsheet, Activity, Wrench, ShieldAlert, Award, Filter, Download } from 'lucide-react';
 import UserManagementPanel from './UserManagementPanel';
@@ -11,15 +11,21 @@ import GlobalSearchHeader from './GlobalSearchHeader';
 const API_URL = `http://${window.location.hostname}:3000`;
 
 function App() {
-  const [currentUser, setCurrentUser] = useState(null);
+  const [currentUser, setCurrentUser] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('skainet_session') || 'null'); }
+    catch { localStorage.removeItem('skainet_session'); return null; }
+  });
+  // El intervalo de actualización no debe conservar el usuario de una sesión anterior.
+  const currentUserRef = useRef(currentUser);
   const [allUsers, setAllUsers] = useState([]);
   const [batches, setBatches] = useState([]);
   const [clientOrders, setClientOrders] = useState([]);
-  const [pendingRings, setPendingRings] = useState([]);
+  const [pendingItems, setPendingItems] = useState([]);
+  const [productTypes, setProductTypes] = useState([]);
   const [activeOrders, setActiveOrders] = useState([]);
-  const [newBatch, setNewBatch] = useState({ entryWeight: '', exitWeight: '', ringsCount: '' });
+  const [newBatch, setNewBatch] = useState({ entryWeight: '', exitWeight: '', itemsCount: '', productTypeId: '' });
   const [newOrder, setNewOrder] = useState({ clientName: '', design: '', estimatedWeight: '' });
-  const [despacho, setDespacho] = useState({ ringId: '', receiverId: '', executorId: '', providedPin: '', weights: { anillo: '', plastilina: '', bolsa: '' } });
+  const [despacho, setDespacho] = useState({ productionItemId: '', receiverId: '', executorId: '', providedPin: '', weights: { anillo: '', plastilina: '', bolsa: '' } });
   const [devolucion, setDevolucion] = useState({ orderId: '', providedPin: '', weights: { anillo: '', plastilina: '', bolsa: '' }, explanation: '' });
   const [alerts, setAlerts] = useState([]);
   const [stats, setStats] = useState({ totalLoss: 0, ranking: [], incidentCount: 0, totalProduced: 0, activeWork: 0 });
@@ -27,6 +33,9 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
   const [password, setPassword] = useState('');
+  const [vaultSearch, setVaultSearch] = useState('');
+  const [expandedVaultBatch, setExpandedVaultBatch] = useState(null);
+  const [expandedDispatchBatch, setExpandedDispatchBatch] = useState(null);
   
   // Estados para recuperación de contraseña
   const [isRecovering, setIsRecovering] = useState(false);
@@ -42,13 +51,20 @@ function App() {
 
   // Cargar usuarios al inicio
   useEffect(() => {
+    currentUserRef.current = currentUser;
+    if (currentUser) localStorage.setItem('skainet_session', JSON.stringify(currentUser));
+    else localStorage.removeItem('skainet_session');
+  }, [currentUser]);
+
+  useEffect(() => {
     fetchUsers();
     fetchBatches();
     fetchClientOrders();
     fetchAlerts();
     fetchStats();
     fetchMachines();
-    fetchPendingRings();
+    fetchPendingItems();
+    fetchProductTypes();
     fetchActiveOrders();
     const interval = setInterval(() => {
       fetchUsers();
@@ -57,7 +73,7 @@ function App() {
       fetchAlerts();
       fetchStats();
       fetchMachines();
-      fetchPendingRings();
+      fetchPendingItems();
       fetchActiveOrders();
     }, 5000);
     return () => clearInterval(interval);
@@ -124,11 +140,19 @@ function App() {
     } catch (err) { console.error(err); }
   };
 
-  const fetchPendingRings = async () => {
+  const fetchPendingItems = async () => {
     try {
-      const resp = await fetch(`${API_URL}/batches/pending-rings`);
+      const resp = await fetch(`${API_URL}/batches/pending-items`);
       const data = await resp.json();
-      setPendingRings(data);
+      setPendingItems(data);
+    } catch (err) { console.error(err); }
+  };
+
+  const fetchProductTypes = async () => {
+    try {
+      const resp = await fetch(`${API_URL}/batches/product-types`);
+      const data = await resp.json();
+      setProductTypes(Array.isArray(data) ? data : []);
     } catch (err) { console.error(err); }
   };
 
@@ -156,8 +180,19 @@ function App() {
       const data = await resp.json();
       setAllUsers(data);
       // Actualizar el estado del usuario logueado si existe sin perder el access_token
-      if (currentUser) {
-        const updated = data.find(u => u.id === currentUser.id);
+      const activeUser = currentUserRef.current;
+      if (activeUser) {
+        const updated = data.find(u => u.id === activeUser.id);
+        if (!updated || updated.accountStatus === 'Inactivo' || updated.accountStatus === 'INACTIVE') {
+          // La cuenta fue desactivada por un administrador: retirar la sesión local
+          // sin esperar a que el usuario haga otra acción.
+          localStorage.removeItem('skainet_session');
+          currentUserRef.current = null;
+          setCurrentUser(null);
+          setSelectedUser(null);
+          setPassword('');
+          return;
+        }
         if (updated) {
           setCurrentUser(prev => ({ ...prev, ...updated, access_token: prev?.access_token }));
         }
@@ -192,10 +227,21 @@ function App() {
     }
   };
 
+  const handleLogout = () => {
+    localStorage.removeItem('skainet_session');
+    currentUserRef.current = null;
+    setCurrentUser(null);
+    setSelectedUser(null);
+    setPassword('');
+    setAdminTab('control');
+    setDespacho({ productionItemId: '', receiverId: '', executorId: '', providedPin: '', weights: { anillo: '', plastilina: '', bolsa: '' } });
+    setDevolucion({ orderId: '', providedPin: '', weights: { anillo: '', plastilina: '', bolsa: '' }, explanation: '' });
+  };
+
   const startRecovery = async () => {
     setLoading(true);
     try {
-      const resp = await fetch(`${API_URL}/users/${selectedUser.id}`);
+      const resp = await fetch(`${API_URL}/users/${selectedUser.id}/recovery-questions`);
       if (resp.ok) {
         const data = await resp.json();
         if (data.securityQuestions && data.securityQuestions.length >= 3) {
@@ -227,7 +273,7 @@ function App() {
       });
       if (resp.ok) {
         const data = await resp.json();
-        setRecoveredPassword(data.password);
+        setRecoveredPassword(data.tempPassword);
       } else {
         const errData = await resp.json();
         alert(`❌ ${errData.message || 'Respuestas incorrectas'}`);
@@ -279,7 +325,7 @@ function App() {
       currentDespacho.receiverId = currentUser.id;
     }
 
-    if (!currentDespacho.ringId || !currentDespacho.executorId) return alert("Selecciona anillo y joyero");
+    if (!currentDespacho.productionItemId || !currentDespacho.executorId) return alert("Selecciona una pieza y joyero");
     setLoading(true);
     
     // Convertir pesos a números antes de enviar
@@ -303,9 +349,9 @@ function App() {
          throw new Error(errData.message || "Clave secreta incorrecta o error en el despacho");
       }
       await resp.json();
-      setDespacho({ ringId: '', receiverId: '', executorId: '', providedPin: '', weights: { anillo: '', plastilina: '', bolsa: '' } });
+      setDespacho({ productionItemId: '', receiverId: '', executorId: '', providedPin: '', weights: { anillo: '', plastilina: '', bolsa: '' } });
       fetchUsers();
-      fetchPendingRings();
+      fetchPendingItems();
       fetchActiveOrders();
       alert("Material entregado. El cronómetro ha iniciado.");
     } catch (err) {
@@ -357,13 +403,14 @@ function App() {
         body: JSON.stringify({
           entryWeight: parseFloat(newBatch.entryWeight),
           exitWeight: parseFloat(newBatch.exitWeight),
-          ringsCount: parseInt(newBatch.ringsCount)
+          itemsCount: parseInt(newBatch.itemsCount),
+          productTypeId: newBatch.productTypeId
         })
       });
       await resp.json();
-      setNewBatch({ entryWeight: '', exitWeight: '', ringsCount: '' });
+      setNewBatch({ entryWeight: '', exitWeight: '', itemsCount: '', productTypeId: '' });
       fetchBatches();
-      alert("Lote creado y anillos generados correctamente.");
+      alert("Lote creado y piezas generadas correctamente.");
     } catch (err) {
       alert("Error al crear lote");
     } finally {
@@ -409,8 +456,10 @@ function App() {
       fetchActiveOrders();
       fetchBatches(); // Refrescar anillos PENDING
       
-      if (resultData.newGeneratedPin) {
+      if (resultData.newGeneratedPin && canAuthorizeCustody) {
          alert(`✅ Cierre Blindado Exitoso.\n\nLa pieza ha sido pesada y devuelta a custodia.\nEl NUEVO PIN SECRETO para el siguiente joyero (o paso) es: ${resultData.newGeneratedPin}\n\nEntrégale físicamente la pieza y dile este código para que la asuma en su mesa.`);
+      } else if (resultData.newGeneratedPin) {
+         alert("✅ Cierre exitoso. La pieza fue devuelta a custodia; el Joyero Líder entregará la próxima clave de autorización.");
       } else {
          alert("✅ Cierre Blindado Exitoso.");
       }
@@ -419,6 +468,10 @@ function App() {
   };
 
   if (!currentUser) {
+    const isLeaderJeweler = (user) =>
+      user.role === 'Lider de Taller' || user.position === 'Joyero Líder' || user.position === 'Joyero Lider';
+    const isWorkshopUser = (user) => user.role === 'Joyero' || isLeaderJeweler(user);
+    const isCentralAdmin = (user) => user.role === 'Administrador' || user.role === 'Super Administrador' || user.role === 'Dueno';
     return (
       <div className="login-screen glass-panel animate-fade-in" style={{ maxWidth: '400px', margin: '80px auto' }}>
         <h2 className="gold-text" style={{ textAlign: 'center', marginBottom: '30px' }}>IDENTIFICACIÓN SKYNET</h2>
@@ -430,11 +483,21 @@ function App() {
             <div style={{ marginBottom: '20px' }}>
               <h4 style={{ color: 'var(--gold)', fontSize: '0.7rem', letterSpacing: '1px', marginBottom: '10px' }}>EQUIPO DE TALLER</h4>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {allUsers.filter(u => u.role !== 'Administrador').map(user => (
-                  <button key={user.id} className="premium-btn" onClick={() => setSelectedUser(user)}>
-                    <UserCircle size={18} /> {user.name}
+                {[...allUsers].filter(user => user.accountStatus === 'Activo' && isWorkshopUser(user)).sort((a, b) => {
+                  const leaderOrder = Number(isLeaderJeweler(b)) - Number(isLeaderJeweler(a));
+                  return leaderOrder || a.name.localeCompare(b.name, 'es');
+                }).map(user => {
+                  const leader = isLeaderJeweler(user);
+                  return (
+                  <button key={user.id} className="premium-btn" onClick={() => setSelectedUser(user)} style={leader ? {
+                    background: 'linear-gradient(135deg, #0f766e, #155e75)',
+                    borderColor: '#2dd4bf', color: '#ecfeff',
+                    boxShadow: '0 0 18px rgba(45, 212, 191, 0.22)'
+                  } : undefined}>
+                    <UserCircle size={18} /> {leader ? `★ JOYERO LÍDER · ${user.name}` : user.name}
+                    {user.position && !leader && <small style={{ marginLeft: '8px', opacity: 0.72, fontSize: '0.62rem' }}>· {user.position.toUpperCase()}</small>}
                   </button>
-                ))}
+                )})}
               </div>
             </div>
 
@@ -442,7 +505,7 @@ function App() {
             
             <h4 style={{ color: '#666', fontSize: '0.7rem', letterSpacing: '1px', marginBottom: '10px' }}>ADMINISTRACIÓN CENTRAL</h4>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {allUsers.filter(u => u.role === 'Administrador').map(user => (
+              {allUsers.filter(user => user.accountStatus === 'Activo' && isCentralAdmin(user)).map(user => (
                 <button 
                   key={user.id} 
                   className="premium-btn" 
@@ -453,7 +516,7 @@ function App() {
                   }} 
                   onClick={() => setSelectedUser(user)}
                 >
-                  {user.name === 'Viralsquad' ? `PANEL SUPERIOR (${user.name})` : `ADMINISTRADORA (${user.name})`}
+                  {user.role === 'Super Administrador' || user.role === 'Dueno' ? `PANEL SUPERIOR (${user.name})` : `ADMINISTRADORA (${user.name})`}
                 </button>
               ))}
             </div>
@@ -469,7 +532,7 @@ function App() {
              {recoveredPassword ? (
                <div style={{ textAlign: 'center', background: 'rgba(52, 211, 153, 0.05)', border: '1px solid var(--success)', padding: '20px', borderRadius: '8px', marginBottom: '10px' }}>
                  <p style={{ color: 'var(--success)', fontSize: '0.9rem', fontWeight: 'bold', marginBottom: '10px' }}>✅ VERIFICACIÓN EXITOSA</p>
-                 <p style={{ fontSize: '0.85rem', color: '#ccc', marginBottom: '15px' }}>Tu contraseña/PIN recuperado es:</p>
+                 <p style={{ fontSize: '0.85rem', color: '#ccc', marginBottom: '15px' }}>Tu nueva contraseña temporal es:</p>
                  <div style={{ background: 'rgba(0,0,0,0.5)', padding: '15px', borderRadius: '4px', fontSize: '1.5rem', fontWeight: 'bold', color: 'white', letterSpacing: '2px', border: '1px solid rgba(255,255,255,0.05)', marginBottom: '20px' }}>
                    {recoveredPassword}
                  </div>
@@ -621,7 +684,7 @@ function App() {
       const row = [
         o.id,
         jeweler,
-        `"${o.ringName}"`,
+        `"${o.productionItemName}"`,
         new Date(o.startTime).toLocaleString(),
         new Date(o.endTime).toLocaleString(),
         o.durationMinutes || 0,
@@ -679,7 +742,20 @@ function App() {
   };
 
   const canManageBatches = currentUser.role === 'Administrador' || currentUser.role === 'Super Administrador' || currentUser.role === 'Dueno';
+  const isJewelerLeader = currentUser.role === 'Lider de Taller' || currentUser.position === 'Joyero Líder';
+  const canAuthorizeCustody = canManageBatches || isJewelerLeader;
   const canDispatch = true; // Todos pueden despachar material siguiendo tu lógica
+  const custodyBatches = batches
+    .map(batch => {
+      const items = batch.items || [];
+      const available = items.filter(item => item.status === 'PENDING');
+      const term = vaultSearch.trim().toLowerCase();
+      const matches = !term || batch.id.toLowerCase().includes(term) || items.some(item =>
+        item.name.toLowerCase().includes(term) || item.productType?.name?.toLowerCase().includes(term));
+      return { ...batch, items, available, matches };
+    })
+    .filter(batch => batch.available.length > 0 && batch.matches)
+    .sort((a, b) => b.available.length - a.available.length || new Date(b.createdAt) - new Date(a.createdAt));
 
   return (
     <div className="app-container">
@@ -702,7 +778,7 @@ function App() {
 
         <GlobalSearchHeader API_URL={API_URL} token={currentUser?.access_token} currentUser={currentUser} />
 
-        <button onClick={() => setCurrentUser(null)} style={{ background: 'none', border: 'none', color: 'var(--gold)', cursor: 'pointer', fontWeight: 'bold' }}>
+        <button onClick={handleLogout} style={{ background: 'none', border: 'none', color: 'var(--gold)', cursor: 'pointer', fontWeight: 'bold' }}>
           Cerrar Sesión
         </button>
       </header>
@@ -759,9 +835,9 @@ function App() {
         </div>
       )}
 
-      <main className="main-grid" style={ (canManageBatches && adminTab !== 'control') ? { display: 'block', gridTemplateColumns: 'none' } : {} }>
+      <main className="main-grid" style={adminTab !== 'control' ? { display: 'block', gridTemplateColumns: 'none' } : {}}>
         {/* Lado Izquierdo: Control de Servicio, Info y ALERTAS */}
-        {(!canManageBatches || adminTab === 'control') && (
+        {adminTab === 'control' && (
           <div className="glass-panel">
           {canManageBatches && alerts.length > 0 && (
             <div className="animate-fade-in" style={{ marginBottom: '30px', padding: '15px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid var(--danger)', borderRadius: '12px' }}>
@@ -832,7 +908,7 @@ function App() {
               </div>
 
               {/* ADMIN CAN UPDATE CLIENT ORDERS TOO */}
-              <JoyeroOrderControl clientOrders={clientOrders} fetchClientOrders={fetchClientOrders} API_URL={API_URL} loading={loading} setLoading={setLoading} />
+              <JoyeroOrderControl clientOrders={clientOrders} fetchClientOrders={fetchClientOrders} API_URL={API_URL} loading={loading} setLoading={setLoading} canCreateOrders={canManageBatches || isJewelerLeader} />
             </div>
           ) : (
             <div style={{ textAlign: 'center' }}>
@@ -858,14 +934,14 @@ function App() {
                 </div>
               )}
 
-              <JoyeroOrderControl clientOrders={clientOrders} fetchClientOrders={fetchClientOrders} API_URL={API_URL} loading={loading} setLoading={setLoading} />
+              <JoyeroOrderControl clientOrders={clientOrders} fetchClientOrders={fetchClientOrders} API_URL={API_URL} loading={loading} setLoading={setLoading} canCreateOrders={canManageBatches || isJewelerLeader} />
             </div>
           )}
         </div>
         )}
 
         {/* Lado Derecho: Registro de Lotes (SOLO ADMIN) y Despacho (TODOS) */}
-        {(!canManageBatches || adminTab === 'control') && (
+        {adminTab === 'control' && (
           <div className="glass-panel">
           {canManageBatches && (
             <>
@@ -969,7 +1045,11 @@ function App() {
                 <h2 className="gold-text" style={{ fontSize: '1rem', letterSpacing: '2px' }}>CONTROL DE FUNDICIÓN</h2>
               </div>
               
-              <form onSubmit={createBatch} className="quick-batch-bar" style={{ display: 'grid', gridTemplateColumns: 'minmax(120px, 1fr) minmax(120px, 1fr) 80px auto', gap: '5px' }}>
+              <form onSubmit={createBatch} className="quick-batch-bar" style={{ display: 'grid', gridTemplateColumns: 'minmax(120px, 1fr) minmax(120px, 1fr) minmax(130px, 1fr) 80px auto', gap: '5px' }}>
+                <select value={newBatch.productTypeId} onChange={e => setNewBatch({...newBatch, productTypeId: e.target.value})} required style={{ background: 'rgba(0,0,0,0.5)', border: '1px solid #333', color: 'white', padding: '15px', borderRadius: '4px' }}>
+                  <option value="">PRODUCTO</option>
+                  {productTypes.map(type => <option key={type.id} value={type.id}>{type.name}</option>)}
+                </select>
                 <input 
                   type="number" step="0.01" 
                   value={newBatch.entryWeight} 
@@ -992,8 +1072,8 @@ function App() {
                 />
                 <input 
                   type="number" 
-                  value={newBatch.ringsCount} 
-                  onChange={e => setNewBatch({...newBatch, ringsCount: e.target.value})} 
+                  value={newBatch.itemsCount} 
+                  onChange={e => setNewBatch({...newBatch, itemsCount: e.target.value})} 
                   placeholder="PIEZAS" 
                   required 
                   style={{ 
@@ -1011,7 +1091,7 @@ function App() {
                  <div className="batches-scroll">
                   {batches.map(batch => (
                     <div key={batch.id} className="batch-pill" style={{ border: '1px solid rgba(212, 175, 55, 0.2)' }}>
-                      <b>ID {batch.id.slice(-4)}</b> | Ent: <span style={{color: '#888'}}>{batch.entryWeight}g</span> | Sal: <span className="gold-text">{batch.exitWeight}g</span> | {batch.ringsCount}un
+                      <b>ID {batch.id.slice(-4)}</b> | Ent: <span style={{color: '#888'}}>{batch.entryWeight}g</span> | Sal: <span className="gold-text">{batch.exitWeight}g</span> | {batch.itemsCount} piezas
                     </div>
                   ))}
                 </div>
@@ -1021,7 +1101,7 @@ function App() {
             </>
           )}
 
-          {currentUser.role.includes('Taller') && pendingRings.length > 0 && (
+          {canAuthorizeCustody && pendingItems.length > 0 && (
              <div className="animate-fade-in" style={{ marginBottom: '60px' }}>
                 <div className="glass-panel" style={{ borderLeft: '4px solid var(--gold)', background: 'linear-gradient(145deg, rgba(20,20,20,0.9), rgba(0,0,0,0.8))' }}>
                    <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '10px' }}>
@@ -1032,22 +1112,25 @@ function App() {
                      Estas piezas físicas están bajo tu responsabilidad. Revela el PIN únicamente al joyero autorizado en mesa.
                    </p>
                    
-                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '20px' }}>
-                       {pendingRings.map(r => (
-                           <div key={r.id} style={{ background: 'rgba(255,255,255,0.03)', padding: '20px', borderRadius: '12px', border: '1px solid rgba(212,175,55,0.2)', textAlign: 'center', transition: 'all 0.3s' }} className="hover-scale-subtle">
-                               <div style={{ fontWeight: 'bold', fontSize: '1.2rem', marginBottom: '5px', color: 'white' }}>{r.name}</div>
-                               <div style={{ fontSize: '0.7rem', color: '#666', marginBottom: '20px' }}>Lote: {r.batchId.slice(-4)}</div>
-                               <button 
-                                 className="action-btn-gold" 
-                                 style={{ padding: '12px', fontSize: '0.75rem', borderRadius: '6px' }}
-                                 onClick={() => {
-                                   alert(`==============================\nAUTORIZACIÓN DE CUSTODIA\n==============================\n\nPIEZA: ${r.name}\n\n[ PIN  SECRETO: ${r.securePin} ]\n\nEl joyero debe ingresar este código en su tableta para desbloquear el trabajo.`);
-                                 }}
-                               >
-                                 <Lock size={14} /> REVELAR PIN DE ENTREGA
-                               </button>
-                           </div>
-                       ))}
+                   <input value={vaultSearch} onChange={e => setVaultSearch(e.target.value)} placeholder="Buscar por lote, pieza o producto..." style={{ width: '100%', boxSizing: 'border-box', marginBottom: '16px', padding: '12px 14px', background: '#0f0f0f', border: '1px solid #514315', borderRadius: '8px', color: 'white' }} />
+                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                     {custodyBatches.map(batch => {
+                       const isOpen = expandedVaultBatch === batch.id;
+                       const assigned = batch.items.filter(item => item.status === 'ASSIGNED').length;
+                       return <div key={batch.id} style={{ border: '1px solid rgba(212,175,55,0.28)', borderRadius: '10px', overflow: 'hidden' }}>
+                         <button type="button" onClick={() => setExpandedVaultBatch(isOpen ? null : batch.id)} style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', background: 'rgba(255,255,255,0.03)', border: 'none', color: 'white', cursor: 'pointer', textAlign: 'left' }}>
+                           <span><b className="gold-text">{isOpen ? '▾' : '▸'} Lote {batch.id}</b><small style={{ display: 'block', color: '#9ca3af', marginTop: '4px' }}>{batch.itemsCount} piezas · {batch.productType?.name || batch.items[0]?.productType?.name || 'Producto'}</small></span>
+                           <span style={{ fontSize: '0.75rem', color: '#86efac' }}>{batch.available.length} disponibles {assigned ? `· ${assigned} asignadas` : ''}</span>
+                         </button>
+                         {isOpen && <div style={{ padding: '14px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: '12px', background: 'rgba(0,0,0,0.2)' }}>
+                           {batch.available.map(item => <div key={item.id} style={{ padding: '14px', textAlign: 'center', border: '1px solid rgba(212,175,55,0.2)', borderRadius: '8px' }}>
+                             <b>{item.name}</b><small style={{ display: 'block', color: '#86efac', margin: '6px' }}>Disponible</small>
+                             <button className="action-btn-gold" style={{ padding: '9px', fontSize: '0.68rem' }} onClick={() => alert(`PIEZA: ${item.name}\nLOTE: ${batch.id}\nPIN SECRETO: ${item.securePin}`)}><Lock size={13} /> REVELAR PIN</button>
+                           </div>)}
+                         </div>}
+                       </div>;
+                     })}
+                     {!custodyBatches.length && <p style={{ color: '#9ca3af', textAlign: 'center' }}>No hay lotes con piezas disponibles para este filtro.</p>}
                    </div>
                 </div>
              </div>
@@ -1058,7 +1141,7 @@ function App() {
               <div className="glass-panel minimalist-form">
                 <header className="form-header">
                   <h2 className="gold-text">Despacho de Material</h2>
-                  {pendingRings.length > 0 && (
+                  {pendingItems.length > 0 && (
                     <div className="total-badge">
                       <span className="label">BALANCE DE ENTREGA</span>
                       <span className="value">{calculateDespachoTotal().toFixed(2)}<small>g</small></span>
@@ -1071,35 +1154,35 @@ function App() {
                     <p style={{ color: 'var(--warning)', fontSize: '1.2rem', marginBottom: '10px' }}>⚠️ LÍMITE DE MESA ALCANZADO</p>
                     <p>Ya tienes una pieza física bajo tu responsabilidad. Debes retornar el material antes de poder aceptar una nueva.</p>
                   </div>
-                ) : pendingRings.length > 0 ? (
+                ) : pendingItems.length > 0 ? (
                   <form onSubmit={executeDespacho}>
                     {/* Visual Grid of Batch Rings */}
-                    {batches.filter(b => b.rings.some(r => r.status !== 'COMPLETED')).map(batch => (
+                    {batches.filter(b => b.items.some(r => r.status !== 'COMPLETED')).map(batch => (
                       <div key={batch.id} style={{ marginBottom: '25px', padding: '20px', background: 'rgba(0,0,0,0.3)', borderRadius: '8px', borderLeft: '3px solid var(--gold)' }}>
-                        <h4 style={{ color: 'white', fontSize: '0.85rem', marginBottom: '15px', letterSpacing: '1px' }}>
-                          LOTE DE FUNDICIÓN: <span className="gold-text">#{batch.id.slice(-4)}</span>
+                        <h4 onClick={() => setExpandedDispatchBatch(expandedDispatchBatch === batch.id ? null : batch.id)} style={{ color: 'white', fontSize: '0.85rem', marginBottom: '0', letterSpacing: '1px', cursor: 'pointer', padding: '4px 0' }}>
+                          {expandedDispatchBatch === batch.id ? '▾' : '▸'} LOTE DE FUNDICIÓN: <span className="gold-text">#{batch.id.slice(-4)}</span>
                           <span style={{ float: 'right', fontSize: '0.7rem', color: '#888', background: 'rgba(255,255,255,0.05)', padding: '4px 8px', borderRadius: '12px' }}>
-                            {batch.rings.filter(r => r.status === 'PENDING').length} DISPONIBLES
+                            {batch.items.filter(r => r.status === 'PENDING').length} DISPONIBLES
                           </span>
                         </h4>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '10px' }}>
-                           {batch.rings.filter(r => r.status !== 'COMPLETED').map(ring => {
+                        {expandedDispatchBatch === batch.id && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '10px', marginTop: '15px' }}>
+                           {batch.items.filter(r => r.status !== 'COMPLETED').map(ring => {
                               let responsible = null;
                               if (ring.status === 'ASSIGNED') {
-                                 const order = activeOrders.find(o => o.ringId === ring.id);
+                                 const order = activeOrders.find(o => o.productionItemId === ring.id);
                                  if (order) {
                                     const u = allUsers.find(u => u.id === order.executorId);
                                     responsible = u ? u.name : 'En Mesa';
                                  }
                               }
-                              const isSelected = despacho.ringId === ring.id;
+                              const isSelected = despacho.productionItemId === ring.id;
                               
                               return (
                                  <div 
                                    key={ring.id} 
                                    onClick={() => {
                                      if (ring.status === 'PENDING') {
-                                       setDespacho({...despacho, ringId: ring.id});
+                                       setDespacho({...despacho, productionItemId: ring.id});
                                        setTimeout(() => document.getElementById('w-anillo')?.focus(), 100);
                                      }
                                    }}
@@ -1120,7 +1203,7 @@ function App() {
                                     <div style={{ fontWeight: 'bold', fontSize: '0.85rem', marginBottom: '8px', color: isSelected ? 'black' : 'var(--gold)' }}>
                                       {ring.name}
                                     </div>
-                                    {currentUser.role !== 'Joyero' && (
+                                    {canAuthorizeCustody && (
                                       <div style={{ fontSize: '0.65rem', letterSpacing: '2px', opacity: 0.8, color: isSelected ? '#a83232' : '#f39c12', marginBottom: '5px' }}>
                                         🔑 PIN: {ring.securePin}
                                       </div>
@@ -1143,23 +1226,23 @@ function App() {
                                  </div>
                               )
                            })}
-                        </div>
+                        </div>}
                       </div>
                     ))}
 
                     {/* Formulario que se despliega si se selecciona */}
-                    {despacho.ringId ? (
+                    {despacho.productionItemId ? (
                        <div className="animate-fade-in" style={{ marginTop: '10px' }}>
                          {/* Cabecera elegante del pesaje */}
                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', paddingBottom: '15px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                            <div style={{ textAlign: 'left' }}>
                              <span style={{ fontSize: '0.65rem', color: 'var(--gold)', letterSpacing: '2px', textTransform: 'uppercase' }}>PESAJE INICIAL</span>
                              <h3 style={{ margin: '5px 0 0 0', color: 'white', fontSize: '1.3rem', fontWeight: 300 }}>
-                               {pendingRings.find(r => r.id === despacho.ringId)?.name || 'Anillo'}
+                               {pendingItems.find(r => r.id === despacho.productionItemId)?.name || 'Pieza'}
                              </h3>
                            </div>
                            
-                           {(canManageBatches || currentUser.role.includes('Taller')) && (
+                           {canAuthorizeCustody && (
                               <div style={{ width: '200px' }}>
                                 <select 
                                   value={despacho.executorId} 
@@ -1277,11 +1360,14 @@ function App() {
                           style={{ width: '100%' }}
                         >
                           <option value="">PIEZA ACTIVA...</option>
-                          {activeOrders.map(o => (
-                            <option key={o.id} value={o.id}>
-                              {allUsers.find(u => u.id === o.executorId)?.name} - {o.ringName}
-                            </option>
-                          ))}
+                          {batches.map(batch => {
+                            const batchOrders = activeOrders.filter(order => batch.items?.some(item => item.id === order.productionItemId));
+                            if (!batchOrders.length) return null;
+                            return <optgroup key={batch.id} label={`LOTE ${batch.id} · ${batchOrders.length} PIEZA${batchOrders.length > 1 ? 'S' : ''} ACTIVA${batchOrders.length > 1 ? 'S' : ''}`}>
+                              {batchOrders.map(order => <option key={order.id} value={order.id}>{order.productionItemName} — {allUsers.find(u => u.id === order.executorId)?.name || 'Joyero'}</option>)}
+                            </optgroup>;
+                          })}
+                          {activeOrders.filter(order => !batches.some(batch => batch.items?.some(item => item.id === order.productionItemId))).map(order => <option key={order.id} value={order.id}>{order.productionItemName} — {allUsers.find(u => u.id === order.executorId)?.name || 'Joyero'}</option>)}
                         </select>
                    </div>
 
@@ -1391,7 +1477,7 @@ function App() {
                   {activeOrder && (
                     <div style={{ marginTop: '10px' }}>
                       <p style={{ fontSize: '0.8rem', color: 'var(--gold)' }}>
-                        <b>{activeOrder.ringName}</b> | {(Number(activeOrder.totalWeight) || 0).toFixed(2)}g
+                        <b>{activeOrder.productionItemName}</b> | {(Number(activeOrder.totalWeight) || 0).toFixed(2)}g
                       </p>
                       <div style={{ fontFamily: 'monospace', fontWeight: 'bold', fontSize: '1rem', marginTop: '5px' }}>
                          <Timer startTime={activeOrder.startTime} />
@@ -1432,7 +1518,7 @@ function App() {
                         <tr key={o.id} style={{ borderBottom: '1px solid #222' }}>
                           <td style={{ padding: '15px', opacity: 0.5 }}>{o.id.slice(-6)}</td>
                           <td style={{ padding: '15px' }}>{allUsers.find(u => u.id === o.executorId)?.name}</td>
-                          <td style={{ padding: '15px' }}>{o.ringName}</td>
+                          <td style={{ padding: '15px' }}>{o.productionItemName}</td>
                           <td style={{ padding: '15px' }}>{new Date(o.startTime).toLocaleTimeString()}</td>
                           <td style={{ padding: '15px' }}>
                             {o.endTime ? `${new Date(o.endTime).toLocaleTimeString()} (${o.durationMinutes} min)` : <span style={{ color: 'var(--warning)' }}>En proceso...</span>}
@@ -1663,7 +1749,7 @@ function App() {
                                   x: p.x,
                                   y: p.y,
                                   title: `Orden #${p.order.id.slice(-6)}`,
-                                  content: `Pieza: ${p.order.ringName}\nJoyero: ${allUsers.find(u => u.id === p.order.executorId)?.name || 'Desconocido'}\nMerma: ${p.order.loss}g\nTiempo: ${p.order.durationMinutes} min`
+                                  content: `Pieza: ${p.order.productionItemName}\nJoyero: ${allUsers.find(u => u.id === p.order.executorId)?.name || 'Desconocido'}\nMerma: ${p.order.loss}g\nTiempo: ${p.order.durationMinutes} min`
                                 });
                               }}
                               onMouseLeave={() => setHoveredPoint(null)}
@@ -1967,7 +2053,7 @@ function App() {
                       <tr key={o.id} style={{ borderBottom: '1px solid #333' }}>
                         <td data-label="Orden" style={{ padding: '15px', opacity: 0.6 }}>{o.id.slice(-6)}</td>
                         <td data-label="Joyero" style={{ padding: '15px', fontWeight: 'bold' }}>{allUsers.find(u => u.id === o.executorId)?.name}</td>
-                        <td data-label="Pieza" style={{ padding: '15px' }}>{o.ringName}</td>
+                        <td data-label="Pieza" style={{ padding: '15px' }}>{o.productionItemName}</td>
                         <td data-label="Peso Ini." style={{ padding: '15px', textAlign: 'center' }}>{o.totalWeight}g</td>
                         <td data-label="Peso Fin." style={{ padding: '15px', textAlign: 'center' }}>{o.finalTotalWeight}g</td>
                         <td data-label="Merma" style={{ padding: '15px', textAlign: 'right', fontWeight: 'bold', color: 'var(--danger)' }}>
@@ -2118,7 +2204,7 @@ const Timer = ({ startTime }) => {
   return <span>{elapsed}</span>;
 }
 
-const JoyeroOrderControl = ({ clientOrders, fetchClientOrders, API_URL, token, loading, setLoading }) => {
+const JoyeroOrderControl = ({ clientOrders, fetchClientOrders, API_URL, token, loading, setLoading, canCreateOrders }) => {
   const [expandedOrderId, setExpandedOrderId] = useState(null);
   const [weightModalOrderId, setWeightModalOrderId] = useState(null);
 
@@ -2163,8 +2249,9 @@ const JoyeroOrderControl = ({ clientOrders, fetchClientOrders, API_URL, token, l
 
   return (
     <div style={{ marginTop: '40px', borderTop: '0.5px solid rgba(212, 175, 55, 0.2)', paddingTop: '30px', textAlign: 'left' }}>
-      <h3 className="gold-text" style={{ fontSize: '1rem', letterSpacing: '1px', marginBottom: '20px', textAlign: 'center' }}>PANEL DE FABRICACIÓN (RF-006 / RF-007)</h3>
+      <h3 className="gold-text" style={{ fontSize: '1rem', letterSpacing: '1px', margin: '0 0 12px', textAlign: 'center' }}>PANEL DE FABRICACIÓN (RF-006 / RF-007)</h3>
       <p style={{ textAlign: 'center', fontSize: '0.8rem', color: '#888', marginBottom: '25px' }}>Toca un pedido para medir tiempo por fase y registrar pesajes con triple factor.</p>
+      {canCreateOrders && <button type="button" onClick={() => window.open('/new-order', '_blank')} className="action-btn-gold" style={{ width: '100%', padding: '12px', fontSize: '0.76rem', marginBottom: '20px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}>＋ REGISTRAR NUEVO PEDIDO</button>}
       
       {weightModalOrderId && (
         <TripleWeightModal

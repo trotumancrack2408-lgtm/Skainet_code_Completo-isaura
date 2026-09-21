@@ -15,9 +15,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
   async validate(payload: any) {
     const user = await this.usersService.findOne(payload.sub);
-    if (!user) {
-      throw new UnauthorizedException();
+    // Un token emitido antes de una desactivación no debe conservar acceso.
+    // La cuenta se consulta en cada solicitud autenticada para invalidarlo de inmediato.
+    if (!user || user.accountStatus === 'Inactivo' || user.accountStatus === 'INACTIVE') {
+      throw new UnauthorizedException('Su sesión ya no está disponible. Contacte a su administrador.');
     }
-    return user;
+    // Mantener `sub` disponible para los controladores, además del perfil público.
+    return { ...user, sub: user.id };
   }
 }

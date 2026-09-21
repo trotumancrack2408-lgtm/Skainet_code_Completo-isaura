@@ -9,6 +9,7 @@ export default function GlobalSearchHeader({ API_URL, token, currentUser }) {
   const [isOpen, setIsOpen] = useState(false);
 
   const isJoyero = currentUser?.role === 'Joyero';
+  const isLeader = currentUser?.position === 'Joyero Líder' || currentUser?.role === 'Lider de Taller';
 
   const handleSearch = async (e) => {
     e.preventDefault();
@@ -39,7 +40,7 @@ export default function GlobalSearchHeader({ API_URL, token, currentUser }) {
           <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
           <input
             type="text"
-            placeholder={isJoyero ? "Buscar inventario u órdenes asignadas..." : "Búsqueda avanzada (Usuarios, Inventario, OT)..."}
+            placeholder={isLeader ? "Buscar material u órdenes del taller..." : isJoyero ? "Buscar inventario u órdenes asignadas..." : "Búsqueda avanzada (Usuarios, Inventario, OT)..."}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             style={{
@@ -141,7 +142,7 @@ export default function GlobalSearchHeader({ API_URL, token, currentUser }) {
                   </h5>
                   {results.orders.map(o => (
                     <div key={o.id} style={{ padding: '8px 10px', backgroundColor: '#111827', borderRadius: '6px', marginBottom: '4px', fontSize: '0.85rem', display: 'flex', justifyContent: 'space-between' }}>
-                      <span>OT #{o.id.slice(-6)} - <strong>{o.ringName || 'Joyero'}</strong></span>
+                      <span>OT #{o.id.slice(-6)} - <strong>{o.productionItemName || o.ringName || 'Pieza'}</strong></span>
                       <span style={{ color: '#fbbf24' }}>{o.status}</span>
                     </div>
                   ))}

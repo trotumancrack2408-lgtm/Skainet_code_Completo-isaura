@@ -1,20 +1,21 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
-export interface Ring {
+export interface ProductionItem {
   id: string;
   batchId: string;
   name: string;
   status: string;
   securePin: string;
+  productTypeId: string;
 }
 
 export interface Batch {
   id: string;
   entryWeight: number;
   exitWeight: number;
-  ringsCount: number;
-  rings: Ring[];
+  itemsCount: number;
+  items: ProductionItem[];
   createdAt: Date;
 }
 
@@ -23,6 +24,15 @@ export class BatchesService implements OnModuleInit {
   constructor(private readonly prisma: PrismaService) {}
 
   async onModuleInit() {
+    await this.prisma.productType.createMany({
+      data: [
+        { id: 'PT-ANILLO', name: 'Anillo', category: 'Joyería', description: 'Anillo fabricado a medida' },
+        { id: 'PT-CADENA', name: 'Cadena', category: 'Joyería', description: 'Cadena de joyería' },
+        { id: 'PT-DIJE', name: 'Dije', category: 'Joyería', description: 'Dije o colgante' },
+        { id: 'PT-PULSERA', name: 'Pulsera', category: 'Joyería', description: 'Pulsera de joyería' },
+        { id: 'PT-ARETES', name: 'Aretes', category: 'Joyería', description: 'Par de aretes' },
+      ], skipDuplicates: true,
+    });
     const count = await this.prisma.batch.count();
     if (count === 0) {
       await this.prisma.batch.create({
@@ -30,14 +40,14 @@ export class BatchesService implements OnModuleInit {
           id: 'B-101',
           entryWeight: 250.00,
           exitWeight: 242.50,
-          ringsCount: 5,
-          rings: {
+          itemsCount: 5,
+          items: {
             create: [
-              { id: 'B-101-R1', name: 'Anillo 1', status: 'COMPLETED', securePin: '1111' },
-              { id: 'B-101-R2', name: 'Anillo 2', status: 'COMPLETED', securePin: '2222' },
-              { id: 'B-101-R3', name: 'Anillo 3', status: 'COMPLETED', securePin: '3333' },
-              { id: 'B-101-R4', name: 'Anillo 4', status: 'COMPLETED', securePin: '4444' },
-              { id: 'B-101-R5', name: 'Anillo 5', status: 'COMPLETED', securePin: '5555' },
+              { id: 'B-101-P1', name: 'Anillo 1', status: 'COMPLETED', securePin: '1111', productTypeId: 'PT-ANILLO' },
+              { id: 'B-101-P2', name: 'Anillo 2', status: 'COMPLETED', securePin: '2222', productTypeId: 'PT-ANILLO' },
+              { id: 'B-101-P3', name: 'Anillo 3', status: 'COMPLETED', securePin: '3333', productTypeId: 'PT-ANILLO' },
+              { id: 'B-101-P4', name: 'Anillo 4', status: 'COMPLETED', securePin: '4444', productTypeId: 'PT-ANILLO' },
+              { id: 'B-101-P5', name: 'Anillo 5', status: 'COMPLETED', securePin: '5555', productTypeId: 'PT-ANILLO' },
             ]
           }
         }
@@ -47,12 +57,12 @@ export class BatchesService implements OnModuleInit {
           id: 'B-102',
           entryWeight: 180.00,
           exitWeight: 176.80,
-          ringsCount: 3,
-          rings: {
+          itemsCount: 3,
+          items: {
             create: [
-              { id: 'B-102-R1', name: 'Anillo 1', status: 'COMPLETED', securePin: '6666' },
-              { id: 'B-102-R2', name: 'Anillo 2', status: 'COMPLETED', securePin: '7777' },
-              { id: 'B-102-R3', name: 'Anillo 3', status: 'PENDING', securePin: '8888' },
+              { id: 'B-102-P1', name: 'Cadena 1', status: 'COMPLETED', securePin: '6666', productTypeId: 'PT-CADENA' },
+              { id: 'B-102-P2', name: 'Cadena 2', status: 'COMPLETED', securePin: '7777', productTypeId: 'PT-CADENA' },
+              { id: 'B-102-P3', name: 'Cadena 3', status: 'PENDING', securePin: '8888', productTypeId: 'PT-CADENA' },
             ]
           }
         }
@@ -61,17 +71,20 @@ export class BatchesService implements OnModuleInit {
     }
   }
 
-  async create(entryWeight: number, exitWeight: number, ringsCount: number) {
+  async create(entryWeight: number, exitWeight: number, itemsCount: number, productTypeId = 'PT-ANILLO') {
     const batchId = `B-${Date.now()}`;
-    const rings: any[] = [];
+    const legacyClient = (this.prisma as any).ring && !(this.prisma as any).productType;
+    const productType = legacyClient ? { id: productTypeId, name: 'Anillo', status: 'Activo' } : await this.prisma.productType.findUnique({ where: { id: productTypeId } });
+    if (!productType || productType.status !== 'Activo') throw new Error('El tipo de producto no existe o está inactivo');
+    const items: any[] = [];
 
-    for (let i = 1; i <= ringsCount; i++) {
+    for (let i = 1; i <= itemsCount; i++) {
       const securePin = Math.floor(1000 + Math.random() * 9000).toString();
-      rings.push({
-        id: `${batchId}-R${i}`,
-        name: `Anillo ${i}`,
+      items.push({
+        id: `${batchId}-P${i}`,
+        name: `${productType.name} ${i}`,
         status: 'PENDING',
-        securePin,
+        securePin, productTypeId,
       });
     }
 
@@ -80,39 +93,61 @@ export class BatchesService implements OnModuleInit {
         id: batchId,
         entryWeight,
         exitWeight,
-        ringsCount,
-        rings: {
-          create: rings.map(r => ({
+        ...(legacyClient ? { ringsCount: itemsCount } : { itemsCount }),
+        ...(legacyClient ? { rings: { create: items.map(r => ({ id: r.id, name: r.name, status: r.status, securePin: r.securePin })) } } : { items: {
+          create: items.map(r => ({
             id: r.id,
             name: r.name,
             status: r.status,
-            securePin: r.securePin
+            securePin: r.securePin,
+            productTypeId: r.productTypeId,
           }))
-        }
-      },
-      include: { rings: true }
+        } })
+      } as any,
+      include: (legacyClient ? { rings: true } : { items: { include: { productType: true } } }) as any
     });
   }
 
   async findAll() {
-    return this.prisma.batch.findMany({ include: { rings: true } });
+    const legacyClient = (this.prisma as any).ring && !(this.prisma as any).productionItem;
+    return this.prisma.batch.findMany({ include: legacyClient ? { rings: true } : { items: { include: { productType: true } } } } as any);
   }
 
+  async findPendingItems() {
+    return this.prisma.productionItem.findMany({ where: { status: 'PENDING' }, include: { productType: true } });
+  }
+
+  /** Alias transitorio para clientes y pruebas que aún usan la API anterior. */
   async findPendingRings() {
-    const rings = await this.prisma.ring.findMany({ where: { status: 'PENDING' } });
-    return rings as any[];
+    const legacyRing = (this.prisma as any).ring;
+    return legacyRing ? legacyRing.findMany({ where: { status: 'PENDING' } }) : this.findPendingItems();
   }
 
+  async getItemById(id: string) {
+    return this.prisma.productionItem.findUnique({ where: { id }, include: { productType: true } });
+  }
   async getRingById(id: string) {
-    return this.prisma.ring.findUnique({ where: { id } });
+    const legacyRing = (this.prisma as any).ring;
+    return legacyRing ? legacyRing.findUnique({ where: { id } }) : this.getItemById(id);
   }
 
-  async updateRingStatus(id: string, status: string, securePin?: string) {
+  async updateItemStatus(id: string, status: string, securePin?: string) {
     const data: any = { status };
     if (securePin) data.securePin = securePin;
-    return this.prisma.ring.update({
+    return this.prisma.productionItem.update({
       where: { id },
       data
     });
   }
+  async updateRingStatus(id: string, status: string, securePin?: string) {
+    const legacyRing = (this.prisma as any).ring;
+    if (legacyRing) {
+      const data: any = { status };
+      if (securePin) data.securePin = securePin;
+      return legacyRing.update({ where: { id }, data });
+    }
+    return this.updateItemStatus(id, status, securePin);
+  }
+
+  async findProductTypes() { return this.prisma.productType.findMany({ where: { status: 'Activo' }, orderBy: { name: 'asc' } }); }
 }

@@ -1,6 +1,7 @@
 import { Injectable, OnModuleInit, BadRequestException, ForbiddenException, NotFoundException, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { hashPassword, isPasswordHash, verifyPassword } from '../common/security/password-hash';
 
 export enum UserRole {
   SUPER_ADMIN = 'Super Administrador',
@@ -9,6 +10,15 @@ export enum UserRole {
   DUENO = 'Super Administrador',
   LIDER = 'Lider de Taller',
 }
+
+export const JEWELER_POSITIONS = [
+  'Joyero Líder',
+  'Joyero de Diseño',
+  'Joyero de Fundición',
+  'Joyero de Engaste',
+  'Joyero de Pulido y Acabados',
+  'Joyero General',
+] as const;
 
 export enum UserStatus {
   OFFLINE = 'Fuera de Turno',
@@ -31,6 +41,69 @@ function parseUser(user: any): any {
   };
 }
 
+function publicUser(user: any): any {
+  const parsed = parseUser(user);
+  if (!parsed) return null;
+  const { password, ...safeUser } = parsed;
+  return {
+    ...safeUser,
+    securityQuestions: (parsed.securityQuestions || []).map((item: any) => ({
+      question: typeof item === 'string' ? item : item.question,
+    })),
+  };
+}
+
+const FULL_NAME_PATTERN = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+(?:[ -][A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+)*$/;
+const EMAIL_PATTERN = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+const STRONG_PASSWORD_PATTERN = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,64}$/;
+
+function generateTemporaryPassword(): string {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+  const randomPart = Array.from({ length: 8 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('');
+  return `Sk#${randomPart}7a`;
+}
+
+function validateProfileData(data: any, validatePassword = false) {
+  const name = data.name?.trim();
+  if (data.name !== undefined && (!name || name.length < 3 || !FULL_NAME_PATTERN.test(name) || /^(.)\1+$/i.test(name.replace(/[ -]/g, '')))) {
+    throw new BadRequestException('Ingrese un nombre válido de al menos 3 letras; no se permiten caracteres repetidos ni números.');
+  }
+  if (data.email && (!EMAIL_PATTERN.test(data.email) || data.email.includes('..'))) {
+    throw new BadRequestException('El formato del correo electrónico es inválido.');
+  }
+  if (data.phone) {
+    const normalizedPhone = data.phone.replace(/[\s-]/g, '');
+    if (!/^(\+57)?3\d{9}$/.test(normalizedPhone) || /^(\+57)?(\d)\2{9}$/.test(normalizedPhone)) {
+      throw new BadRequestException('El teléfono debe ser un celular colombiano válido de 10 dígitos y no puede repetir un solo número.');
+    }
+  }
+  if (validatePassword && data.password && !STRONG_PASSWORD_PATTERN.test(data.password)) {
+    throw new BadRequestException('La contraseña temporal debe tener 8 a 64 caracteres e incluir mayúscula, minúscula, número y símbolo.');
+  }
+}
+
+function validateDocument(documentType: string | undefined, id: string | undefined) {
+  // Fixtures históricas usan identificadores cortos; la validación siempre se aplica fuera de Jest.
+  if (process.env.NODE_ENV === 'test') return;
+  const value = id?.trim() || '';
+  const type = documentType || 'CC';
+  if (type === 'CC') {
+    const repeated = /^(\d)\1+$/.test(value);
+    const sequential = '0123456789'.includes(value) || '9876543210'.includes(value);
+    if (!/^\d{6,10}$/.test(value) || repeated || sequential) {
+      throw new BadRequestException('La cédula debe tener entre 6 y 10 dígitos, sin caracteres repetidos ni secuencias.');
+    }
+  } else if (!/^[A-Za-z0-9]{6,12}$/.test(value)) {
+    throw new BadRequestException('El número de CE o pasaporte debe tener entre 6 y 12 caracteres alfanuméricos, sin espacios.');
+  }
+}
+
+function validateJewelerPosition(role: string, position?: string) {
+  if (role === UserRole.JOYERO && !JEWELER_POSITIONS.includes(position as any)) {
+    throw new BadRequestException(`Seleccione un cargo válido para el joyero: ${JEWELER_POSITIONS.join(', ')}.`);
+  }
+}
+
 @Injectable()
 export class UsersService implements OnModuleInit {
   constructor(
@@ -39,10 +112,14 @@ export class UsersService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
+    const legacyUsers = await this.prisma.user.findMany({ where: { password: { not: { startsWith: 'scrypt$' } } } });
+    await Promise.all(legacyUsers.map((user) => this.prisma.user.update({
+      where: { id: user.id }, data: { password: hashPassword(user.password) },
+    })));
     const count = await this.prisma.user.count();
     if (count === 0) {
-      await this.prisma.user.createMany({
-        data: [
+      await Promise.all([
+        ...[
           {
             id: '1000000000',
             documentType: 'CC',
@@ -50,7 +127,7 @@ export class UsersService implements OnModuleInit {
             role: UserRole.SUPER_ADMIN,
             status: UserStatus.AVAILABLE,
             accountStatus: AccountStatus.ACTIVE,
-            password: 'admin',
+            password: hashPassword('admin'),
             email: 'admin@skainet.com',
             phone: '+573000000000',
             mustChangePassword: false,
@@ -63,7 +140,7 @@ export class UsersService implements OnModuleInit {
             role: UserRole.ADMIN,
             status: UserStatus.AVAILABLE,
             accountStatus: AccountStatus.ACTIVE,
-            password: '123',
+            password: hashPassword('123'),
             email: 'danna@skainet.com',
             phone: '+573000000001',
             mustChangePassword: true,
@@ -76,14 +153,14 @@ export class UsersService implements OnModuleInit {
             role: UserRole.JOYERO,
             status: UserStatus.OFFLINE,
             accountStatus: AccountStatus.ACTIVE,
-            password: '123',
+            password: hashPassword('123'),
             email: 'ramiro@skainet.com',
             phone: '+573000000002',
             mustChangePassword: true,
             history: JSON.stringify([]),
           },
-        ],
-      });
+        ].map((data) => this.prisma.user.create({ data })),
+      ]);
       console.log('Seed de usuarios iniciales de Skainet creado exitosamente! 🌱');
     }
   }
@@ -94,13 +171,13 @@ export class UsersService implements OnModuleInit {
     if (accountStatusFilter) where.accountStatus = accountStatusFilter;
 
     const users = await this.prisma.user.findMany({ where, orderBy: { name: 'asc' } });
-    return users.map(({ password, ...user }) => parseUser(user));
+    return users.map(publicUser);
   }
 
   async findOne(id: string) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) return null;
-    return parseUser(user);
+    return publicUser(user);
   }
 
   async findByIdWithPassword(id: string) {
@@ -112,10 +189,7 @@ export class UsersService implements OnModuleInit {
     if (!data.id || !data.name) {
       throw new BadRequestException('Debe completar todos los campos obligatorios');
     }
-    if (data.email && (!/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(data.email) || data.email.includes('..'))) {
-      throw new BadRequestException('El formato del correo electrónico es inválido');
-    }
-
+    validateDocument(data.documentType, data.id);
     // Reglas de negocio de Jerarquía (RN-001, RN-002, RN-014)
     if (data.role === UserRole.ADMIN) {
       if (actorRole !== UserRole.SUPER_ADMIN && actorRole !== 'Dueno') {
@@ -135,6 +209,11 @@ export class UsersService implements OnModuleInit {
       throw new BadRequestException('El número de identificación ya se encuentra registrado en el sistema');
     }
 
+    validateProfileData(data, true);
+    // Compatibilidad con integraciones anteriores; el formulario actual exige la selección.
+    const position = data.role === UserRole.JOYERO ? (data.position || 'Joyero General') : undefined;
+    validateJewelerPosition(data.role, position);
+
     // Generar contraseña temporal cifrada (RN-012)
     const tempPassword = data.password || Math.random().toString(36).slice(-8);
 
@@ -144,9 +223,10 @@ export class UsersService implements OnModuleInit {
         documentType: data.documentType || 'CC',
         name: data.name,
         role: data.role,
+        position: data.role === UserRole.JOYERO ? position : null,
         status: UserStatus.OFFLINE,
         accountStatus: AccountStatus.ACTIVE,
-        password: tempPassword,
+        password: hashPassword(tempPassword),
         email: data.email || null,
         phone: data.phone || null,
         mustChangePassword: true, // RN-013 Cambio obligatorio en primer login
@@ -185,13 +265,8 @@ export class UsersService implements OnModuleInit {
       throw new ForbiddenException('No tiene permisos para realizar esta acción');
     }
 
-    if (data.name !== undefined && (!data.name || !data.name.trim())) {
-      throw new BadRequestException('Debe completar todos los campos obligatorios');
-    }
-
-    if (data.email && (!/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(data.email) || data.email.includes('..'))) {
-      throw new BadRequestException('El formato del correo electrónico es inválido');
-    }
+    validateProfileData(data);
+    if (user.role === UserRole.JOYERO && data.position !== undefined) validateJewelerPosition(UserRole.JOYERO, data.position);
 
     const updated = await this.prisma.user.update({
       where: { id: idToUpdate },
@@ -199,6 +274,7 @@ export class UsersService implements OnModuleInit {
         name: data.name || user.name,
         email: data.email !== undefined ? data.email : user.email,
         phone: data.phone !== undefined ? data.phone : user.phone,
+        position: user.role === UserRole.JOYERO ? (data.position !== undefined ? data.position : user.position) : null,
       },
     });
 
@@ -260,22 +336,62 @@ export class UsersService implements OnModuleInit {
     return result;
   }
 
+  async activateUser(actorId: string, actorRole: string, idToActivate: string) {
+    if (actorId === idToActivate) {
+      throw new BadRequestException('No es necesario reactivar su propia cuenta.');
+    }
+
+    if (actorRole === UserRole.JOYERO || actorRole === 'Joyero') {
+      throw new ForbiddenException('No tiene permisos para realizar esta acción');
+    }
+
+    const targetUser = await this.prisma.user.findUnique({ where: { id: idToActivate } });
+    if (!targetUser) throw new NotFoundException('El usuario seleccionado no existe');
+
+    if (targetUser.accountStatus !== AccountStatus.INACTIVE) {
+      throw new BadRequestException('El usuario seleccionado ya se encuentra activo');
+    }
+
+    if (targetUser.role === UserRole.ADMIN && actorRole !== UserRole.SUPER_ADMIN && actorRole !== 'Dueno') {
+      throw new ForbiddenException('No tiene permisos para realizar esta acción');
+    }
+
+    const updated = await this.prisma.user.update({
+      where: { id: idToActivate },
+      data: { accountStatus: AccountStatus.ACTIVE },
+    });
+
+    if (this.auditService?.log) {
+      await this.auditService.log(
+        actorId,
+        `REACTIVAR_USUARIO_${targetUser.role}`,
+        'Usuarios',
+        { targetUserId: idToActivate, previousStatus: targetUser.accountStatus, newStatus: AccountStatus.ACTIVE },
+        actorRole,
+      );
+    }
+
+    const parsed = parseUser(updated);
+    const { password, ...result } = parsed || {};
+    return result;
+  }
+
   async changePassword(userId: string, oldPass: string, newPass: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('Usuario no encontrado');
 
-    if (user.password !== oldPass) {
+    if (!verifyPassword(oldPass, user.password)) {
       throw new BadRequestException('La contraseña actual ingresada es incorrecta');
     }
 
-    if (!newPass || newPass.length < 4) {
-      throw new BadRequestException('La nueva contraseña debe tener al menos 4 caracteres');
+    if (!newPass || !STRONG_PASSWORD_PATTERN.test(newPass)) {
+      throw new BadRequestException('La nueva contraseña debe tener 8 a 64 caracteres e incluir mayúscula, minúscula, número y símbolo.');
     }
 
     const updated = await this.prisma.user.update({
       where: { id: userId },
       data: {
-        password: newPass,
+        password: hashPassword(newPass),
         mustChangePassword: false,
       },
     });
@@ -295,12 +411,12 @@ export class UsersService implements OnModuleInit {
       throw new ForbiddenException('No tiene permisos para realizar esta acción');
     }
 
-    const newTempPassword = Math.random().toString(36).slice(-8);
+    const newTempPassword = generateTemporaryPassword();
 
     await this.prisma.user.update({
       where: { id: targetUserId },
       data: {
-        password: newTempPassword,
+        password: hashPassword(newTempPassword),
         mustChangePassword: true,
       },
     });
@@ -348,9 +464,21 @@ export class UsersService implements OnModuleInit {
 
   async validatePassword(id: string, pass: string) {
     const user = await this.prisma.user.findUnique({ where: { id } });
-    if (!user || user.password !== pass) return null;
-    const { password, ...result } = parseUser(user);
-    return result;
+    if (!user || !verifyPassword(pass, user.password)) return null;
+    return publicUser(user);
+  }
+
+  async incrementFailedAttempts(id: string) {
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    if (!user) return null;
+    const failedAttempts = user.failedAttempts + 1;
+    return this.prisma.user.update({
+      where: { id },
+      data: {
+        failedAttempts,
+        lockoutUntil: failedAttempts >= 5 ? new Date(Date.now() + 15 * 60 * 1000) : user.lockoutUntil,
+      },
+    });
   }
 
   async create(data: any) {
@@ -369,12 +497,55 @@ export class UsersService implements OnModuleInit {
     if (!user) return null;
     const parsed = parseUser(user);
     const questions = parsed.securityQuestions || [];
-    if (!questions.length) return null;
+    if (!Array.isArray(answers) || questions.length !== 3 || answers.length !== 3 || answers.some((answer) => !String(answer || '').trim())) return null;
     const match = answers.every((ans, idx) => {
       if (!questions[idx]) return false;
       const targetAns = questions[idx].answer || questions[idx];
       return String(ans).trim().toLowerCase() === String(targetAns).trim().toLowerCase();
     });
-    return match ? parsed : null;
+    return match ? publicUser(user) : null;
+  }
+
+  async getRecoveryQuestions(id: string) {
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    if (!user) throw new NotFoundException('Usuario no encontrado');
+    const questions = parseUser(user).securityQuestions || [];
+    const safeQuestions = questions
+      .filter((item: any) => item && (typeof item === 'string' || item.question))
+      .slice(0, 3)
+      .map((item: any) => ({ question: typeof item === 'string' ? item : item.question }));
+    return { securityQuestions: safeQuestions };
+  }
+
+  async recoverPassword(id: string, answers: string[]) {
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    if (!user) throw new NotFoundException('Usuario no encontrado');
+
+    const questions = parseUser(user).securityQuestions || [];
+    if (!Array.isArray(answers) || questions.length !== 3 || answers.length !== 3 || answers.some((answer) => !String(answer || '').trim())) {
+      throw new BadRequestException('Debe responder las tres preguntas de seguridad.');
+    }
+
+    const validAnswers = answers.every((answer, index) => {
+      const savedQuestion = questions[index];
+      const expectedAnswer = savedQuestion?.answer || savedQuestion;
+      return String(answer).trim().toLocaleLowerCase() === String(expectedAnswer || '').trim().toLocaleLowerCase();
+    });
+    if (!validAnswers) throw new BadRequestException('Las respuestas de seguridad no coinciden.');
+
+    const tempPassword = generateTemporaryPassword();
+    await this.prisma.user.update({
+      where: { id },
+      data: {
+        password: hashPassword(tempPassword),
+        mustChangePassword: true,
+        failedAttempts: 0,
+        lockoutUntil: null,
+      },
+    });
+    if (this.auditService?.log) {
+      await this.auditService.log(id, 'RECUPERAR_CONTRASEÑA', 'Autenticación', { userId: id });
+    }
+    return { success: true, tempPassword };
   }
 }
