@@ -127,7 +127,7 @@ async function main() {
     console.log('Material "Oro 18k" updated to 150g stock');
   }
 
-  // 5. Ensure Batch and Ring exist for work order
+  // 5. Ensure Batch and ProductionItem exist for work order
   // Batch B-102 must exist
   let batch = await prisma.batch.findUnique({
     where: { id: 'B-102' },
@@ -138,22 +138,23 @@ async function main() {
         id: 'B-102',
         entryWeight: 180.00,
         exitWeight: 176.80,
-        ringsCount: 3,
+        itemsCount: 3,
       },
     });
   }
 
-  let ring = await prisma.ring.findUnique({
-    where: { id: 'B-102-R3' },
+  let productionItem = await prisma.productionItem.findUnique({
+    where: { id: 'B-102-P3' },
   });
-  if (!ring) {
-    ring = await prisma.ring.create({
+  if (!productionItem) {
+    productionItem = await prisma.productionItem.create({
       data: {
-        id: 'B-102-R3',
-        name: 'Anillo 3',
+        id: 'B-102-P3',
+        name: 'Cadena 3',
         status: 'PENDING',
         securePin: '8888',
         batchId: 'B-102',
+        productTypeId: 'PT-CADENA',
       },
     });
   }
@@ -162,8 +163,8 @@ async function main() {
   const workOrder = await prisma.workOrder.upsert({
     where: { id: 'OT-000123' },
     update: {
-      ringId: 'B-102-R3',
-      ringName: 'Anillo 3 (Lote B-102)',
+      productionItemId: 'B-102-P3',
+      productionItemName: 'Cadena 3 (Lote B-102)',
       receiverId: '2000200020',
       executorId: '3000300030',
       totalWeight: 10.5,
@@ -173,8 +174,8 @@ async function main() {
     },
     create: {
       id: 'OT-000123',
-      ringId: 'B-102-R3',
-      ringName: 'Anillo 3 (Lote B-102)',
+      productionItemId: 'B-102-P3',
+      productionItemName: 'Cadena 3 (Lote B-102)',
       receiverId: '2000200020',
       executorId: '3000300030',
       totalWeight: 10.5,

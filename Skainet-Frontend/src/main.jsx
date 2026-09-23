@@ -3,8 +3,8 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import './index.css'
 import App from './App.jsx'
-import ClientTracking from './ClientTracking.jsx'
-import ClientOrderForm from './ClientOrderForm.jsx'
+import ClientTracking from './features/clients/ClientTracking.jsx'
+import ClientOrderForm from './features/clients/ClientOrderForm.jsx'
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

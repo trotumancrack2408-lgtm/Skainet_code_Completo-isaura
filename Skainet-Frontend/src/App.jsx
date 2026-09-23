@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './App.css';
 import { UserCircle, Power, Clock, CheckCircle, PauseCircle, Lock, Bell, TrendingUp, TrendingDown, FileSpreadsheet, Activity, Wrench, ShieldAlert, Award, Filter, Download } from 'lucide-react';
-import UserManagementPanel from './UserManagementPanel';
-import PasswordChangeModal from './PasswordChangeModal';
-import InventoryPanel from './InventoryPanel';
-import PhaseTimerWidget from './PhaseTimerWidget';
-import TripleWeightModal from './TripleWeightModal';
-import GlobalSearchHeader from './GlobalSearchHeader';
+import UserManagementPanel from './features/users/UserManagementPanel';
+import PasswordChangeModal from './features/users/PasswordChangeModal';
+import InventoryPanel from './features/inventory/InventoryPanel';
+import PhaseTimerWidget from './features/production/PhaseTimerWidget';
+import TripleWeightModal from './features/production/TripleWeightModal';
+import GlobalSearchHeader from './components/shared/GlobalSearchHeader';
 
 const API_URL = `http://${window.location.hostname}:3000`;
 

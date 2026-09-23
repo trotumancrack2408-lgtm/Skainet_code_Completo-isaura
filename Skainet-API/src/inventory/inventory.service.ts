@@ -9,16 +9,30 @@ export class InventoryService {
     @Optional() private readonly auditService?: AuditService,
   ) {}
 
+  private validateScaleQuantity(value: unknown, fieldName: string, allowZero = false): number {
+    const quantity = Number(value);
+    const isValidValue = Number.isFinite(quantity) && (allowZero ? quantity >= 0 : quantity > 0);
+    const hasOneDecimalOrLess = Math.abs(quantity * 10 - Math.round(quantity * 10)) < Number.EPSILON * 10;
+
+    if (!isValidValue) {
+      throw new BadRequestException(`${fieldName} debe ser un valor numérico ${allowZero ? 'mayor o igual a cero' : 'mayor a cero'}.`);
+    }
+
+    if (!hasOneDecimalOrLess) {
+      throw new BadRequestException(`${fieldName} solo admite incrementos de 0.1, porque la báscula no mide una precisión mayor.`);
+    }
+
+    return Number(quantity.toFixed(1));
+  }
+
   // RF-004.1 Registrar Material
   async createMaterial(actorId: string, actorRole: string, data: any) {
     if (!data.name || !data.category || !data.unit) {
       throw new BadRequestException('Debe completar todos los campos obligatorios.');
     }
 
-    const stockInicial = Number(data.stockInicial || data.stock || 0);
-    if (isNaN(stockInicial) || stockInicial < 0) {
-      throw new BadRequestException('El stock inicial debe ser un valor numérico mayor o igual a cero.');
-    }
+    const stockInicial = this.validateScaleQuantity(data.stockInicial ?? data.stock ?? 0, 'El stock inicial', true);
+    const minStock = this.validateScaleQuantity(data.minStock ?? 0, 'El stock mínimo', true);
 
     // Validar duplicado entre materiales activos (FA-01)
     const existing = await this.prisma.material.findFirst({
@@ -37,7 +51,7 @@ export class InventoryService {
         category: data.category,
         unit: data.unit,
         stock: stockInicial,
-        minStock: Number(data.minStock || 0),
+        minStock,
         status: 'Activo',
       },
     });
@@ -176,17 +190,14 @@ export class InventoryService {
       throw new ForbiddenException('No tiene permisos para registrar entradas de inventario.');
     }
 
-    const qty = Number(data.quantity);
-    if (isNaN(qty) || qty <= 0) {
-      throw new BadRequestException('La cantidad debe ser un valor numérico mayor a cero.');
-    }
+    const qty = this.validateScaleQuantity(data.quantity, 'La cantidad');
 
     const material = await this.prisma.material.findUnique({ where: { id: data.materialId } });
     if (!material || material.status === 'Inactivo') {
       throw new BadRequestException('No es posible registrar movimientos sobre un material inactivo.');
     }
 
-    const newStock = Number((material.stock + qty).toFixed(2));
+    const newStock = Number((material.stock + qty).toFixed(1));
 
     await this.prisma.material.update({
       where: { id: material.id },
@@ -219,10 +230,7 @@ export class InventoryService {
 
   // RF-004.6 Registrar Salida de Material
   async registerSalida(actorId: string, actorRole: string, data: { materialId: string; quantity: number; workOrderId: string; observations?: string }) {
-    const qty = Number(data.quantity);
-    if (isNaN(qty) || qty <= 0) {
-      throw new BadRequestException('La cantidad debe ser un valor numérico mayor a cero.');
-    }
+    const qty = this.validateScaleQuantity(data.quantity, 'La cantidad');
 
     // RN-021 Debe asociar la salida a una orden de producción
     if (!data.workOrderId) {
@@ -239,7 +247,7 @@ export class InventoryService {
       throw new BadRequestException('Error: Inventario insuficiente para realizar la operación.');
     }
 
-    const newStock = Number((material.stock - qty).toFixed(2));
+    const newStock = Number((material.stock - qty).toFixed(1));
 
     await this.prisma.material.update({
       where: { id: material.id },

@@ -6,8 +6,6 @@
   ],
   "rootDir": "..",
   "roots": [
-    "<rootDir>/Skainet-API/src",
-    "<rootDir>/Skainet-API/pruebas",
     "<rootDir>/test/unitarias",
     "<rootDir>/test/integracion"
   ],

@@ -90,6 +90,32 @@ describe('PRUEBAS UNITARIAS - Inventario de Materia Prima (RF-004)', () => {
     });
   });
 
+  describe('CP-086.1: Precisión de la báscula', () => {
+    it('Debe aceptar décimos y rechazar cantidades con más de un decimal en entradas y salidas', async () => {
+      prismaMock.material.findUnique.mockResolvedValue({
+        id: 'MAT-1', name: 'Oro 18K', stock: 10, status: 'Activo',
+      });
+      prismaMock.material.update.mockResolvedValue({ id: 'MAT-1', stock: 9.9 });
+      prismaMock.kardexMovement.create.mockResolvedValue({ id: 'K-1' });
+
+      await expect(
+        service.registerEntry('1000000000', 'Super Admin', { materialId: 'MAT-1', quantity: 1.01 }),
+      ).rejects.toThrow('La cantidad solo admite incrementos de 0.1');
+
+      await expect(
+        service.registerSalida('1000000000', 'Super Admin', {
+          materialId: 'MAT-1', quantity: 0.11, workOrderId: 'OT-1',
+        }),
+      ).rejects.toThrow('La cantidad solo admite incrementos de 0.1');
+
+      await expect(
+        service.registerSalida('1000000000', 'Super Admin', {
+          materialId: 'MAT-1', quantity: 0.1, workOrderId: 'OT-1',
+        }),
+      ).resolves.toMatchObject({ newStock: 9.9 });
+    });
+  });
+
   /**
    * --------------------------------------------------------------------------
    * CASO DE PRUEBA: CP-090

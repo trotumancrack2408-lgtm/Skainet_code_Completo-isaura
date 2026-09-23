@@ -165,6 +165,12 @@ describe('InventoryService - Pruebas Unitarias', () => {
     ).rejects.toThrow('No es posible registrar movimientos sobre un material inactivo.');
   });
 
+  it('8.1 registerEntry: Debe rechazar cantidades con más de un decimal', async () => {
+    await expect(
+      service.registerEntry('admin-1', 'Administrador', { materialId: 'mat-001', quantity: 10.01 }),
+    ).rejects.toThrow('La cantidad solo admite incrementos de 0.1');
+  });
+
   // RF-004.6: Registrar Salida
   it('9. registerSalida: Debe descontar stock si existe suficiente y tiene orden asociada', async () => {
     prismaMock.material.findUnique.mockResolvedValue(mockMaterial);
@@ -193,6 +199,20 @@ describe('InventoryService - Pruebas Unitarias', () => {
     await expect(
       service.registerSalida('joyero-1', 'Joyero', { materialId: 'mat-001', quantity: 500, workOrderId: 'ORD-100' }),
     ).rejects.toThrow('Error: Inventario insuficiente para realizar la operación.');
+  });
+
+  it('10.1 registerSalida: Debe aceptar décimos y rechazar precisiones no medibles', async () => {
+    prismaMock.material.findUnique.mockResolvedValue(mockMaterial);
+    prismaMock.material.update.mockResolvedValue({ ...mockMaterial, stock: 99.9 });
+    prismaMock.kardexMovement.create.mockResolvedValue({ id: 'k-3', type: 'SALIDA', quantity: 0.1 });
+
+    await expect(
+      service.registerSalida('joyero-1', 'Joyero', { materialId: 'mat-001', quantity: 0.11, workOrderId: 'ORD-100' }),
+    ).rejects.toThrow('La cantidad solo admite incrementos de 0.1');
+
+    await expect(
+      service.registerSalida('joyero-1', 'Joyero', { materialId: 'mat-001', quantity: 0.1, workOrderId: 'ORD-100' }),
+    ).resolves.toMatchObject({ newStock: 99.9 });
   });
 
   // RF-004.7: Consultar Kardex
