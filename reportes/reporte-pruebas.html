@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SKAINET FI | Reporte de pruebas</title>
+  <style>
+    :root { --ink:#172033; --muted:#667085; --line:#e5e7eb; --ok:#087443; --ok-bg:#e9f8ef; --blue:#155eef; --paper:#fff; --page:#f5f7fb; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:Inter,Segoe UI,Arial,sans-serif; color:var(--ink); background:var(--page); }
+    main { width:min(1000px,calc(100% - 32px)); margin:32px auto; }
+    header { background:linear-gradient(115deg,#111c38,#1b4fb5); color:#fff; padding:38px 42px; border-radius:18px 18px 0 0; }
+    h1 { margin:0 0 8px; font-size:30px; } h2 { margin:0; font-size:20px; } p { line-height:1.55; }
+    header p { margin:0; opacity:.88; } .content { background:var(--paper); padding:32px 42px 42px; border-radius:0 0 18px 18px; box-shadow:0 10px 30px #1d29391a; }
+    .status { display:inline-flex; align-items:center; gap:8px; margin:0 0 25px; padding:8px 12px; border-radius:999px; background:var(--ok-bg); color:var(--ok); font-weight:700; }
+    .dot { width:9px; height:9px; border-radius:50%; background:var(--ok); }
+    .summary { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin:18px 0 32px; }
+    .card { border:1px solid var(--line); border-radius:12px; padding:17px; background:#fff; }
+    .card b { display:block; font-size:28px; color:var(--blue); } .card span { display:block; margin-top:5px; font-size:13px; color:var(--muted); }
+    table { width:100%; border-collapse:collapse; margin:14px 0 26px; } th,td { padding:13px 12px; text-align:left; border-bottom:1px solid var(--line); } th { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; } td:last-child,th:last-child { text-align:right; }
+    .pass { color:var(--ok); font-weight:700; } .note { border-left:4px solid var(--blue); padding:8px 15px; background:#eff5ff; color:#344054; }
+    footer { color:var(--muted); font-size:13px; margin-top:25px; } @media(max-width:650px){ header,.content{padding:25px;} .summary{grid-template-columns:repeat(2,1fr);} }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Reporte de ejecución de pruebas</h1>
+      <p>SKAINET FI · API REST · 24 de septiembre de 2026</p>
+    </header>
+    <section class="content">
+      <div class="status"><span class="dot"></span> EJECUCIÓN EXITOSA</div>
+      <p>Se ejecutó la suite configurada en <code>Skainet-API/jest.config.json</code>, separando las pruebas unitarias de las de integración. No se encontraron pruebas ni suites fallidas.</p>
+      <div class="summary">
+        <div class="card"><b>63</b><span>Suites ejecutadas</span></div>
+        <div class="card"><b>248</b><span>Pruebas ejecutadas</span></div>
+        <div class="card"><b>248</b><span>Pruebas aprobadas</span></div>
+        <div class="card"><b>0</b><span>Pruebas fallidas</span></div>
+      </div>
+      <h2>Resultados por tipo</h2>
+      <table>
+        <thead><tr><th>Tipo de prueba</th><th>Suites</th><th>Pruebas</th><th>Aprobadas</th><th>Fallidas</th><th>Estado</th></tr></thead>
+        <tbody>
+          <tr><td>Unitarias</td><td>42</td><td>110</td><td>110</td><td>0</td><td class="pass">✓ APROBADO</td></tr>
+          <tr><td>Integración</td><td>21</td><td>138</td><td>138</td><td>0</td><td class="pass">✓ APROBADO</td></tr>
+          <tr><td><b>Total</b></td><td><b>63</b></td><td><b>248</b></td><td><b>248</b></td><td><b>0</b></td><td class="pass">✓ 100%</td></tr>
+        </tbody>
+      </table>
+      <h2>Interpretación</h2>
+      <p class="note"><b>Resultado:</b> el 100% de las pruebas ejecutadas aprobó. Esto confirma que los escenarios cubiertos por la suite actual se comportaron según lo esperado en esta ejecución.</p>
+      <footer>Fuentes: salida de Jest generada en <code>tmp/resultados-unitarias.json</code> y <code>tmp/resultados-integracion.json</code>. Las estadísticas corresponden a esta ejecución; el reporte no sustituye el análisis de cobertura de código.</footer>
+    </section>
+  </main>
+</body>
+</html>
